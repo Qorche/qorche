@@ -1,0 +1,115 @@
+# Qorche — Project conventions
+
+**Domain**: qorche.io
+**Package**: io.qorche
+**License**: Apache 2.0
+
+## What this project is
+
+Qorche is a deterministic, editor-agnostic orchestrator for concurrent filesystem
+mutations. It manages concurrent agent execution using MVCC-inspired filesystem
+concurrency control, task DAG scheduling, and a context bus for inter-agent awareness.
+
+The orchestrator is the control plane — deterministic Kotlin code. The workers
+are LLM agents (Claude Code, Codex, Junie, etc.) or any process that modifies files,
+managed as external processes.
+
+The core (io.qorche.core) is domain-agnostic — it has ZERO references to AI, LLMs,
+or agents. It is a general-purpose concurrent filesystem coordination engine that
+could serve CI/CD, build systems, or infrastructure tooling. The AI agent adapters
+live only in io.qorche.agent.
+
+## Project planning
+
+See docs/PHASE1_PLAN.md for the full roadmap, data models, milestone definitions
+(M0 -> M1 -> M2), architecture decisions, and relationship to AgentFS, Koog, CASS,
+and other projects. Follow the task sequence defined there.
+
+See docs/IMPLEMENTATION.md for current milestone progress and what's done vs remaining.
+
+## Architecture constraints
+
+### GraalVM native-image compatibility (CRITICAL)
+- NO runtime reflection — ever. No Class.forName(), no field.setAccessible().
+- NO dynamic class loading or runtime proxy generation.
+- NO Gson or Jackson — use kotlinx.serialization exclusively.
+- NO java.io.Serializable for data transfer.
+- Use @Serializable annotation on all persistent data classes.
+- Register any JNI usage explicitly (sqlite-jdbc needs this).
+- If adding a new dependency, verify GraalVM compatibility FIRST.
+
+### Cross-platform (Windows, macOS, Linux)
+- ALWAYS use java.nio.file.Path for file operations.
+- Store all paths with forward slashes as the canonical form.
+- Normalise on read: path.replace("\\", "/")
+- Process spawning: detect OS via System.getProperty("os.name") and adjust
+  binary names (e.g., `claude` vs `claude.exe`).
+- Normalise line endings to `\n` before hashing files.
+
+### Module boundaries (STRICT)
+Multi-module Gradle project. Respect the dependency graph:
+- core/ depends on: nothing (stdlib + kotlinx only)
+- agent/ depends on: core/ only
+- cli/ depends on: core/ and agent/
+
+NEVER import from agent/ or cli/ in core/. If you need to, define an interface
+in core/ and implement it in the appropriate module.
+
+### Memory discipline
+- Target: < 30MB RSS idle on standard JVM with -Xmx64m
+- Stream file contents through MessageDigest — don't read entire files into memory
+- Use Sequence/Flow instead of intermediate List copies for large collections
+- Minimise object allocations in hot paths (file hashing, snapshot comparison)
+
+### SQLite
+- Use standard SQLite via sqlite-jdbc. NOT FrankenSQLite, DuckDB, or any MVCC database.
+- Enable WAL mode: `PRAGMA journal_mode=WAL`
+- Our MVCC operates at the filesystem level above SQLite, not inside the database.
+- Single writer (the orchestrator daemon), concurrent readers (CLI queries, dashboard).
+
+### No frameworks
+- No Ktor, Spring, Compose Multiplatform, or any application framework.
+- Plain Kotlin with kotlinx.coroutines, kotlinx.serialization, Clikt (CLI), sqlite-jdbc.
+- This is a CLI daemon, not a web app or GUI application.
+
+## Coding style
+
+### Kotlin conventions
+- Data classes for all value types
+- Sealed classes/interfaces for algebraic types (AgentEvent, TaskStatus, WALEntry)
+- Kotlin coroutines for all async work — no raw threads, no CompletableFuture
+- Extension functions over utility classes
+- Prefer val over var, immutable collections over mutable
+- No wildcard imports
+
+### Naming
+- Package: io.qorche.{module}
+- Files named after their primary class/interface
+- Test files: {ClassName}Test.kt
+
+### Serialization
+- kotlinx.serialization with @Serializable on all persistent data classes
+- JSON as primary format (kotlinx-serialization-json)
+- YAML for task definitions (kaml library)
+- WAL uses JSON Lines format (.jsonl) — one JSON object per line, append-only
+- Timestamps: kotlinx.datetime.Instant
+
+### Error handling
+- Use Result<T> or sealed class results for expected failures
+- Throw exceptions only for programmer errors (bugs)
+- Agent failures are expected — model them in the type system
+- Always clean up child processes on error (shutdown hooks, try/finally)
+
+## Testing
+- Core logic tested against MockAgentRunner — no LLM calls needed
+- Use kotlinx-coroutines-test for async testing
+- Every public function in core/ should have tests
+- Integration tests with real agents are separate and opt-in
+- Test cross-platform path handling explicitly
+
+## Local data directory
+- `.qorche/` is the local data store (similar to `.git/`)
+- `.qorche/snapshots/` — snapshot files
+- `.qorche/wal.jsonl` — write-ahead log
+- `.qorche/db.sqlite` — persistent index and metadata
+- `.qorche/` should be in .gitignore for user projects
