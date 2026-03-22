@@ -75,7 +75,7 @@ At 5k files: M0 was 0.6x (slower), M1 is 1.4x (faster).
 
 ---
 
-## M2: Task graph + dependency model (in progress)
+## M2: Task graph + dependency model [COMPLETE]
 
 ### Done
 - [x] `TaskYamlParser` — parse YAML task definitions via kaml into TaskProject/TaskGraph
@@ -88,6 +88,36 @@ At 5k files: M0 was 0.6x (slower), M1 is 1.4x (faster).
 - [x] `TaskYamlParserTest` — 10 tests: parsing, dependencies, cycles, errors, parallel groups
 - [x] `OrchestratorGraphTest` — 5 tests: 5-task graph, failure propagation, order, scoping, WAL history
 
-### Remaining
+### Also added (beyond original M2 scope)
+- [x] `ShellRunner` — secure shell command executor with allowlist, timeout, env filtering
+- [x] `ShellRunnerTest` — 8 tests: allowlist rejection, tokenisation, cross-platform, env filtering
+
+### Remaining (deferred to later)
 - [ ] End-to-end CLI test: `qorche plan` + `qorche run` with YAML file
 - [ ] Error reporting polish (line numbers in YAML parse errors)
+
+---
+
+## M3: Parallel execution + MVCC conflict detection (not started)
+
+### Tasks
+- [ ] Execute parallel groups concurrently via coroutines
+- [ ] MVCC conflict detection after parallel task completion
+- [ ] Conflict resolution strategy (fail-fast or merge)
+- [ ] Update benchmarks to measure real parallel execution (not just simulated)
+- [ ] WAL entries for conflict events
+- [ ] Test: two agents modify same file → conflict detected
+- [ ] Test: two agents modify different files → no conflict, both succeed
+
+---
+
+## Future: Native shared library (post-M3)
+
+### Tasks
+- [ ] Spike: GraalVM `--shared` build with one exported function
+- [ ] Design C API header (function signatures, callback typedefs for async monitoring)
+- [ ] Create `native/` module with @CEntryPoint wrappers
+- [ ] Handle sqlite-jdbc JNI registration for native-image
+- [ ] Build + test on Windows, Linux, macOS
+- [ ] Example consumers: Python ctypes, Node ffi-napi
+- [ ] CI matrix build for all platforms
