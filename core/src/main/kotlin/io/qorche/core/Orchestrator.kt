@@ -11,16 +11,6 @@ import kotlin.io.path.createDirectories
 
 /**
  * Coordinates agent execution with snapshot lifecycle and WAL logging.
- *
- * For each agent run:
- * 1. Load FileIndex from disk (warm cache)
- * 2. Take a before-snapshot
- * 3. Log TaskStarted to WAL
- * 4. Run the agent
- * 5. Take an after-snapshot
- * 6. Compute diff
- * 7. Log TaskCompleted/TaskFailed to WAL
- * 8. Persist FileIndex and snapshots
  */
 class Orchestrator(private val workDir: Path) {
 
@@ -63,6 +53,10 @@ class Orchestrator(private val workDir: Path) {
         val skipReason: String? = null
     )
 
+    /**
+     * Execute a single task with full snapshot lifecycle and WAL logging.
+     * Takes before/after snapshots, runs the agent, computes diff, and persists state.
+     */
     suspend fun runTask(
         taskId: String,
         instruction: String,
@@ -70,7 +64,6 @@ class Orchestrator(private val workDir: Path) {
         scopePaths: List<String> = emptyList(),
         onOutput: (String) -> Unit = {}
     ): RunResult {
-        // 1. Before snapshot
         val beforeSnapshot = if (scopePaths.isNotEmpty()) {
             SnapshotCreator.createScoped(workDir, scopePaths, "before: $taskId", fileIndex = fileIndex)
         } else {
@@ -78,14 +71,12 @@ class Orchestrator(private val workDir: Path) {
         }
         snapshotStore.save(beforeSnapshot)
 
-        // 2. Log start
         walWriter.append(WALEntry.TaskStarted(
             taskId = taskId,
             instruction = instruction,
             snapshotId = beforeSnapshot.id
         ))
 
-        // 3. Run agent
         val events = mutableListOf<AgentEvent>()
         val filesModified = mutableListOf<String>()
         var exitCode = 1
@@ -105,7 +96,6 @@ class Orchestrator(private val workDir: Path) {
             throw e
         }
 
-        // 4. After snapshot
         val afterSnapshot = if (scopePaths.isNotEmpty()) {
             SnapshotCreator.createScoped(workDir, scopePaths, "after: $taskId",
                 parentId = beforeSnapshot.id, fileIndex = fileIndex)
@@ -115,10 +105,7 @@ class Orchestrator(private val workDir: Path) {
         }
         snapshotStore.save(afterSnapshot)
 
-        // 5. Compute diff
         val diff = SnapshotCreator.diff(beforeSnapshot, afterSnapshot)
-
-        // 6. Log completion
         val agentResult = AgentResult(
             exitCode = exitCode,
             filesModified = filesModified
@@ -138,7 +125,6 @@ class Orchestrator(private val workDir: Path) {
             ))
         }
 
-        // 7. Persist file index
         fileIndex.saveTo(fileIndexPath)
 
         return RunResult(agentResult, diff, beforeSnapshot, afterSnapshot)
@@ -163,11 +149,10 @@ class Orchestrator(private val workDir: Path) {
             val node = graph[taskId] ?: continue
             val def = node.definition
 
-            // Check if any dependency failed — if so, skip this task
             val failedDep = def.dependsOn.firstOrNull { it in failedTasks }
             if (failedDep != null) {
                 node.status = TaskStatus.SKIPPED
-                failedTasks.add(taskId) // propagate: tasks depending on skipped tasks also skip
+                failedTasks.add(taskId)
                 val outcome = TaskOutcome(
                     taskId = taskId,
                     status = TaskStatus.SKIPPED,
@@ -258,7 +243,6 @@ class Orchestrator(private val workDir: Path) {
         val groups = graph.parallelGroups()
 
         for (group in groups) {
-            // Filter out tasks whose dependencies failed
             val runnableTasks = group.filter { taskId ->
                 val node = graph[taskId] ?: return@filter false
                 val failedDep = node.definition.dependsOn.firstOrNull { it in failedTasks }
@@ -281,7 +265,6 @@ class Orchestrator(private val workDir: Path) {
             if (runnableTasks.isEmpty()) continue
 
             if (runnableTasks.size == 1) {
-                // Single task in group — run directly, no conflict detection needed
                 val taskId = runnableTasks[0]
                 val outcome = executeTask(taskId, graph, runner, onTaskStart, onOutput)
                 outcomes[taskId] = outcome
@@ -290,11 +273,9 @@ class Orchestrator(private val workDir: Path) {
                 continue
             }
 
-            // Take a base snapshot before the parallel group
             val baseSnapshot = SnapshotCreator.create(workDir, "base: group", fileIndex = fileIndex)
             snapshotStore.save(baseSnapshot)
 
-            // Run all tasks in the group concurrently
             val groupResults = coroutineScope {
                 runnableTasks.map { taskId ->
                     async {
@@ -306,7 +287,6 @@ class Orchestrator(private val workDir: Path) {
                 }.awaitAll()
             }
 
-            // Collect changes per task for conflict detection
             val changesByTask = mutableMapOf<String, Set<String>>()
             val taskRunResults = mutableMapOf<String, RunResult>()
 
@@ -344,7 +324,6 @@ class Orchestrator(private val workDir: Path) {
                 }
             }
 
-            // MVCC conflict detection across the parallel group
             val conflicts = ConflictDetector.detectGroupConflicts(changesByTask)
             val conflictedTaskIds = mutableSetOf<String>()
 
@@ -354,7 +333,6 @@ class Orchestrator(private val workDir: Path) {
                 conflictedTaskIds.add(conflict.taskB)
                 onConflict(conflict)
 
-                // Log conflicts to WAL
                 walWriter.append(WALEntry.ConflictDetected(
                     taskId = conflict.taskA,
                     conflictingTaskId = conflict.taskB,
@@ -363,9 +341,8 @@ class Orchestrator(private val workDir: Path) {
                 ))
             }
 
-            // Mark conflicted tasks as FAILED, non-conflicted as COMPLETED
             for (taskId in changesByTask.keys) {
-                if (taskId in outcomes) continue // already handled (exitCode != 0)
+                if (taskId in outcomes) continue
                 val node = graph[taskId]!!
                 val runResult = taskRunResults[taskId] ?: continue
 
@@ -394,7 +371,6 @@ class Orchestrator(private val workDir: Path) {
                 }
             }
 
-            // Scope audit: detect writes outside declared scopes
             val hasScopedTasks = runnableTasks.any { taskId ->
                 graph[taskId]?.definition?.files?.isNotEmpty() == true
             }
@@ -414,8 +390,6 @@ class Orchestrator(private val workDir: Path) {
                 for (violation in violations) {
                     allScopeViolations.add(violation)
                     onScopeViolation(violation)
-                    // WAL entry uses first suspect as taskId (for WAL's required field)
-                    // but includes all suspects in the entry
                     walWriter.append(WALEntry.ScopeViolation(
                         taskId = violation.suspectTaskIds.firstOrNull() ?: "unknown",
                         undeclaredFiles = violation.undeclaredFiles.toList(),
@@ -490,7 +464,6 @@ class Orchestrator(private val workDir: Path) {
         walMutex: Mutex,
         onOutput: (String) -> Unit
     ): Result<RunResult> = try {
-        // Before snapshot
         val beforeSnapshot = if (def.files.isNotEmpty()) {
             SnapshotCreator.createScoped(workDir, def.files, "before: $taskId", fileIndex = fileIndex)
         } else {
@@ -506,7 +479,6 @@ class Orchestrator(private val workDir: Path) {
             ))
         }
 
-        // Run agent
         val events = mutableListOf<AgentEvent>()
         val filesModified = mutableListOf<String>()
         var exitCode = 1
@@ -521,7 +493,6 @@ class Orchestrator(private val workDir: Path) {
             }
         }
 
-        // After snapshot
         val afterSnapshot = if (def.files.isNotEmpty()) {
             SnapshotCreator.createScoped(workDir, def.files, "after: $taskId",
                 parentId = beforeSnapshot.id, fileIndex = fileIndex)

@@ -161,7 +161,6 @@ class PlanCommand : CliktCommand(name = "plan") {
         echo("Task graph: ${project.tasks.size} tasks")
         echo("")
 
-        // Show execution order
         echo("Execution order (sequential):")
         val order = graph.topologicalSort()
         for ((i, taskId) in order.withIndex()) {
@@ -173,7 +172,6 @@ class PlanCommand : CliktCommand(name = "plan") {
             echo("  ${i + 1}. ${def.id} (${def.type.name.lowercase()}) — $deps$files")
         }
 
-        // Show parallel groups
         val groups = graph.parallelGroups()
         if (groups.any { it.size > 1 }) {
             echo("")
@@ -221,7 +219,6 @@ class DiffCommand : CliktCommand(name = "diff") {
         val workDir = Path.of(System.getProperty("user.dir"))
         val orchestrator = Orchestrator(workDir)
 
-        // If only one ID given, diff against its parent or latest
         val resolvedId2 = id2 ?: run {
             val snap = orchestrator.history().find { it.id.startsWith(id1) }
             snap?.parentId ?: run {
@@ -230,7 +227,6 @@ class DiffCommand : CliktCommand(name = "diff") {
             }
         }
 
-        // Resolve short IDs to full IDs
         val allSnapshots = orchestrator.history()
         val fullId1 = allSnapshots.find { it.id.startsWith(resolvedId2) }?.id ?: resolvedId2
         val fullId2 = allSnapshots.find { it.id.startsWith(id1) }?.id ?: id1

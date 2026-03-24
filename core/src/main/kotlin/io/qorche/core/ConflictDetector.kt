@@ -118,15 +118,11 @@ object ConflictDetector {
         taskScopes: Map<String, List<String>>,
         changesByTask: Map<String, Set<String>>
     ): List<ScopeViolation> {
-        // All files accounted for by scoped snapshots
         val allDeclaredChanges = changesByTask.values.flatten().toSet()
-
-        // Files changed on disk but not captured by any task's scoped snapshot
         val unaccountedFiles = allChangedFiles - allDeclaredChanges
 
         if (unaccountedFiles.isEmpty()) return emptyList()
 
-        // All tasks in the group are suspects — we can't attribute blame
         val suspectTaskIds = taskScopes.keys.filter { it in changesByTask }
 
         return listOf(ScopeViolation(
