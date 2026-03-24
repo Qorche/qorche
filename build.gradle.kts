@@ -35,9 +35,21 @@ subprojects {
 
     tasks.named<Test>("test") {
         useJUnitPlatform {
-            excludeTags("large-scale")
+            excludeTags("large-scale", "benchmark")
         }
         jvmArgs("-Xmx64m")
+    }
+
+    tasks.register<Test>("benchmark") {
+        useJUnitPlatform {
+            includeTags("benchmark")
+            excludeTags("large-scale")
+        }
+        jvmArgs("-Xmx128m")
+        group = "verification"
+        description = "Run benchmark tests (100-20k files)"
+        testClassesDirs = tasks.named<Test>("test").get().testClassesDirs
+        classpath = tasks.named<Test>("test").get().classpath
     }
 
     // Run with: ./gradlew :agent:largeBenchmark

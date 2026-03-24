@@ -47,6 +47,7 @@ import kotlin.test.assertTrue
  *
  * 3. SCALING — How do these numbers change with more files and more steps?
  */
+@Tag("benchmark")
 class BenchmarkTest {
 
     companion object {
