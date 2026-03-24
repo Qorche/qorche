@@ -1,6 +1,11 @@
 package io.qorche.core
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 
@@ -42,9 +47,13 @@ class Orchestrator(private val workDir: Path) {
         val totalTasks: Int,
         val completedTasks: Int,
         val failedTasks: Int,
-        val skippedTasks: Int
+        val skippedTasks: Int,
+        val conflicts: List<ConflictDetector.TaskConflict> = emptyList(),
+        val scopeViolations: List<ConflictDetector.ScopeViolation> = emptyList()
     ) {
-        val success: Boolean get() = failedTasks == 0
+        val success: Boolean get() = failedTasks == 0 && conflicts.isEmpty()
+        val hasConflicts: Boolean get() = conflicts.isNotEmpty()
+        val hasScopeViolations: Boolean get() = scopeViolations.isNotEmpty()
     }
 
     data class TaskOutcome(
@@ -219,6 +228,334 @@ class Orchestrator(private val workDir: Path) {
             failedTasks = allNodes.count { it.status == TaskStatus.FAILED },
             skippedTasks = allNodes.count { it.status == TaskStatus.SKIPPED }
         )
+    }
+
+    /**
+     * Execute a task graph with parallel execution within groups.
+     *
+     * Tasks in the same parallel group (no dependencies between them) run concurrently.
+     * After each group completes, MVCC conflict detection checks for write-write conflicts.
+     *
+     * Strategy on conflict: fail-fast. Conflicting tasks are marked FAILED, and their
+     * dependents are skipped. Non-conflicting tasks in the same group succeed normally.
+     */
+    suspend fun runGraphParallel(
+        project: String,
+        graph: TaskGraph,
+        runner: AgentRunner,
+        onTaskStart: (TaskDefinition) -> Unit = {},
+        onTaskComplete: (String, TaskOutcome) -> Unit = { _, _ -> },
+        onConflict: (ConflictDetector.TaskConflict) -> Unit = {},
+        onScopeViolation: (ConflictDetector.ScopeViolation) -> Unit = {},
+        onOutput: (String) -> Unit = {}
+    ): GraphResult {
+        val outcomes = mutableMapOf<String, TaskOutcome>()
+        val failedTasks = mutableSetOf<String>()
+        val allConflicts = mutableListOf<ConflictDetector.TaskConflict>()
+        val allScopeViolations = mutableListOf<ConflictDetector.ScopeViolation>()
+        val walMutex = Mutex()
+
+        val groups = graph.parallelGroups()
+
+        for (group in groups) {
+            // Filter out tasks whose dependencies failed
+            val runnableTasks = group.filter { taskId ->
+                val node = graph[taskId] ?: return@filter false
+                val failedDep = node.definition.dependsOn.firstOrNull { it in failedTasks }
+                if (failedDep != null) {
+                    node.status = TaskStatus.SKIPPED
+                    failedTasks.add(taskId)
+                    val outcome = TaskOutcome(
+                        taskId = taskId,
+                        status = TaskStatus.SKIPPED,
+                        skipReason = "Dependency '$failedDep' failed"
+                    )
+                    outcomes[taskId] = outcome
+                    onTaskComplete(taskId, outcome)
+                    false
+                } else {
+                    true
+                }
+            }
+
+            if (runnableTasks.isEmpty()) continue
+
+            if (runnableTasks.size == 1) {
+                // Single task in group — run directly, no conflict detection needed
+                val taskId = runnableTasks[0]
+                val outcome = executeTask(taskId, graph, runner, onTaskStart, onOutput)
+                outcomes[taskId] = outcome
+                if (outcome.status == TaskStatus.FAILED) failedTasks.add(taskId)
+                onTaskComplete(taskId, outcome)
+                continue
+            }
+
+            // Take a base snapshot before the parallel group
+            val baseSnapshot = SnapshotCreator.create(workDir, "base: group", fileIndex = fileIndex)
+            snapshotStore.save(baseSnapshot)
+
+            // Run all tasks in the group concurrently
+            val groupResults = coroutineScope {
+                runnableTasks.map { taskId ->
+                    async {
+                        val node = graph[taskId]!!
+                        onTaskStart(node.definition)
+                        node.status = TaskStatus.RUNNING
+                        taskId to executeTaskInternal(taskId, node.definition, runner, walMutex, onOutput)
+                    }
+                }.awaitAll()
+            }
+
+            // Collect changes per task for conflict detection
+            val changesByTask = mutableMapOf<String, Set<String>>()
+            val taskRunResults = mutableMapOf<String, RunResult>()
+
+            for ((taskId, result) in groupResults) {
+                val node = graph[taskId]!!
+                when {
+                    result.isFailure -> {
+                        node.status = TaskStatus.FAILED
+                        failedTasks.add(taskId)
+                        val outcome = TaskOutcome(
+                            taskId = taskId,
+                            status = TaskStatus.FAILED,
+                            skipReason = "Exception: ${result.exceptionOrNull()?.message}"
+                        )
+                        outcomes[taskId] = outcome
+                        onTaskComplete(taskId, outcome)
+                    }
+                    else -> {
+                        val runResult = result.getOrThrow()
+                        taskRunResults[taskId] = runResult
+                        val diff = runResult.diff
+                        changesByTask[taskId] = diff.added + diff.modified + diff.deleted
+
+                        if (runResult.agentResult.exitCode != 0) {
+                            node.status = TaskStatus.FAILED
+                            failedTasks.add(taskId)
+                            node.beforeSnapshotId = runResult.beforeSnapshot.id
+                            node.afterSnapshotId = runResult.afterSnapshot.id
+                            node.result = runResult.agentResult
+                            val outcome = TaskOutcome(taskId = taskId, status = TaskStatus.FAILED, runResult = runResult)
+                            outcomes[taskId] = outcome
+                            onTaskComplete(taskId, outcome)
+                        }
+                    }
+                }
+            }
+
+            // MVCC conflict detection across the parallel group
+            val conflicts = ConflictDetector.detectGroupConflicts(changesByTask)
+            val conflictedTaskIds = mutableSetOf<String>()
+
+            for (conflict in conflicts) {
+                allConflicts.add(conflict)
+                conflictedTaskIds.add(conflict.taskA)
+                conflictedTaskIds.add(conflict.taskB)
+                onConflict(conflict)
+
+                // Log conflicts to WAL
+                walWriter.append(WALEntry.ConflictDetected(
+                    taskId = conflict.taskA,
+                    conflictingTaskId = conflict.taskB,
+                    conflictingFiles = conflict.conflictingFiles.toList(),
+                    baseSnapshotId = baseSnapshot.id
+                ))
+            }
+
+            // Mark conflicted tasks as FAILED, non-conflicted as COMPLETED
+            for (taskId in changesByTask.keys) {
+                if (taskId in outcomes) continue // already handled (exitCode != 0)
+                val node = graph[taskId]!!
+                val runResult = taskRunResults[taskId] ?: continue
+
+                if (taskId in conflictedTaskIds) {
+                    node.status = TaskStatus.FAILED
+                    failedTasks.add(taskId)
+                    node.beforeSnapshotId = runResult.beforeSnapshot.id
+                    node.afterSnapshotId = runResult.afterSnapshot.id
+                    node.result = runResult.agentResult
+                    val outcome = TaskOutcome(
+                        taskId = taskId,
+                        status = TaskStatus.FAILED,
+                        runResult = runResult,
+                        skipReason = "MVCC conflict detected"
+                    )
+                    outcomes[taskId] = outcome
+                    onTaskComplete(taskId, outcome)
+                } else {
+                    node.status = TaskStatus.COMPLETED
+                    node.beforeSnapshotId = runResult.beforeSnapshot.id
+                    node.afterSnapshotId = runResult.afterSnapshot.id
+                    node.result = runResult.agentResult
+                    val outcome = TaskOutcome(taskId = taskId, status = TaskStatus.COMPLETED, runResult = runResult)
+                    outcomes[taskId] = outcome
+                    onTaskComplete(taskId, outcome)
+                }
+            }
+
+            // Scope audit: detect writes outside declared scopes
+            val hasScopedTasks = runnableTasks.any { taskId ->
+                graph[taskId]?.definition?.files?.isNotEmpty() == true
+            }
+            if (hasScopedTasks) {
+                val auditSnapshot = SnapshotCreator.create(workDir, "audit: group", fileIndex = fileIndex)
+                val fullDiff = SnapshotCreator.diff(baseSnapshot, auditSnapshot)
+                val allChangedOnDisk = fullDiff.added + fullDiff.modified + fullDiff.deleted
+
+                val taskScopes = runnableTasks.associate { taskId ->
+                    taskId to (graph[taskId]?.definition?.files ?: emptyList())
+                }
+
+                val violations = ConflictDetector.detectScopeViolations(
+                    allChangedOnDisk, taskScopes, changesByTask
+                )
+
+                for (violation in violations) {
+                    allScopeViolations.add(violation)
+                    onScopeViolation(violation)
+                    // WAL entry uses first suspect as taskId (for WAL's required field)
+                    // but includes all suspects in the entry
+                    walWriter.append(WALEntry.ScopeViolation(
+                        taskId = violation.suspectTaskIds.firstOrNull() ?: "unknown",
+                        undeclaredFiles = violation.undeclaredFiles.toList(),
+                        suspectTaskIds = violation.suspectTaskIds
+                    ))
+                }
+            }
+        }
+
+        fileIndex.saveTo(fileIndexPath)
+
+        val allNodes = graph.allNodes()
+        return GraphResult(
+            project = project,
+            taskResults = outcomes,
+            totalTasks = allNodes.size,
+            completedTasks = allNodes.count { it.status == TaskStatus.COMPLETED },
+            failedTasks = allNodes.count { it.status == TaskStatus.FAILED },
+            skippedTasks = allNodes.count { it.status == TaskStatus.SKIPPED },
+            conflicts = allConflicts,
+            scopeViolations = allScopeViolations
+        )
+    }
+
+    /**
+     * Execute a single task, returning a TaskOutcome. Used by sequential runGraph.
+     */
+    private suspend fun executeTask(
+        taskId: String,
+        graph: TaskGraph,
+        runner: AgentRunner,
+        onTaskStart: (TaskDefinition) -> Unit,
+        onOutput: (String) -> Unit
+    ): TaskOutcome {
+        val node = graph[taskId] ?: return TaskOutcome(taskId, TaskStatus.FAILED, skipReason = "Unknown task")
+        val def = node.definition
+
+        onTaskStart(def)
+        node.status = TaskStatus.RUNNING
+
+        return try {
+            val result = runTask(
+                taskId = taskId,
+                instruction = def.instruction,
+                runner = runner,
+                scopePaths = def.files,
+                onOutput = onOutput
+            )
+
+            val success = result.agentResult.exitCode == 0
+            node.status = if (success) TaskStatus.COMPLETED else TaskStatus.FAILED
+            node.beforeSnapshotId = result.beforeSnapshot.id
+            node.afterSnapshotId = result.afterSnapshot.id
+            node.result = result.agentResult
+
+            TaskOutcome(taskId = taskId, status = node.status, runResult = result)
+        } catch (e: Exception) {
+            node.status = TaskStatus.FAILED
+            TaskOutcome(taskId = taskId, status = TaskStatus.FAILED, skipReason = "Exception: ${e.message}")
+        }
+    }
+
+    /**
+     * Internal task execution that returns Result<RunResult>.
+     * Used by parallel execution to capture exceptions without crashing the group.
+     * Uses a mutex for WAL writes since multiple tasks write concurrently.
+     */
+    private suspend fun executeTaskInternal(
+        taskId: String,
+        def: TaskDefinition,
+        runner: AgentRunner,
+        walMutex: Mutex,
+        onOutput: (String) -> Unit
+    ): Result<RunResult> = try {
+        // Before snapshot
+        val beforeSnapshot = if (def.files.isNotEmpty()) {
+            SnapshotCreator.createScoped(workDir, def.files, "before: $taskId", fileIndex = fileIndex)
+        } else {
+            SnapshotCreator.create(workDir, "before: $taskId", fileIndex = fileIndex)
+        }
+        snapshotStore.save(beforeSnapshot)
+
+        walMutex.withLock {
+            walWriter.append(WALEntry.TaskStarted(
+                taskId = taskId,
+                instruction = def.instruction,
+                snapshotId = beforeSnapshot.id
+            ))
+        }
+
+        // Run agent
+        val events = mutableListOf<AgentEvent>()
+        val filesModified = mutableListOf<String>()
+        var exitCode = 1
+
+        runner.run(def.instruction, workDir, onOutput).toList(events)
+
+        for (event in events) {
+            when (event) {
+                is AgentEvent.FileModified -> filesModified.add(event.path)
+                is AgentEvent.Completed -> exitCode = event.exitCode
+                else -> {}
+            }
+        }
+
+        // After snapshot
+        val afterSnapshot = if (def.files.isNotEmpty()) {
+            SnapshotCreator.createScoped(workDir, def.files, "after: $taskId",
+                parentId = beforeSnapshot.id, fileIndex = fileIndex)
+        } else {
+            SnapshotCreator.create(workDir, "after: $taskId",
+                parentId = beforeSnapshot.id, fileIndex = fileIndex)
+        }
+        snapshotStore.save(afterSnapshot)
+
+        val diff = SnapshotCreator.diff(beforeSnapshot, afterSnapshot)
+        val agentResult = AgentResult(exitCode = exitCode, filesModified = filesModified)
+
+        walMutex.withLock {
+            if (exitCode == 0) {
+                walWriter.append(WALEntry.TaskCompleted(
+                    taskId = taskId,
+                    snapshotId = afterSnapshot.id,
+                    exitCode = exitCode,
+                    filesModified = filesModified
+                ))
+            } else {
+                walWriter.append(WALEntry.TaskFailed(
+                    taskId = taskId,
+                    error = "Agent exited with code $exitCode"
+                ))
+            }
+        }
+
+        Result.success(RunResult(agentResult, diff, beforeSnapshot, afterSnapshot))
+    } catch (e: Exception) {
+        walMutex.withLock {
+            walWriter.append(WALEntry.TaskFailed(taskId = taskId, error = e.message ?: "Unknown error"))
+        }
+        Result.failure(e)
     }
 
     fun history(): List<Snapshot> = snapshotStore.list()

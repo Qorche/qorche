@@ -96,7 +96,7 @@ class RunCommand : CliktCommand(name = "run") {
         echo("")
 
         runBlocking {
-            val result = orchestrator.runGraph(
+            val result = orchestrator.runGraphParallel(
                 project = project.project,
                 graph = graph,
                 runner = runner,
@@ -118,6 +118,9 @@ class RunCommand : CliktCommand(name = "run") {
                         else -> {}
                     }
                 },
+                onConflict = { conflict ->
+                    echo("[CONFLICT] ${conflict.taskA} <-> ${conflict.taskB}: ${conflict.conflictingFiles.joinToString(", ")}")
+                },
                 onOutput = { line ->
                     if (verbose) echo("[agent] $line")
                 }
@@ -125,6 +128,9 @@ class RunCommand : CliktCommand(name = "run") {
 
             val elapsed = System.currentTimeMillis() - startTime
             echo("")
+            if (result.hasConflicts) {
+                echo("Conflicts: ${result.conflicts.size} detected")
+            }
             echo("Results: ${result.completedTasks} completed, ${result.failedTasks} failed, ${result.skippedTasks} skipped")
             echo("Total time: ${elapsed}ms")
         }
@@ -171,7 +177,7 @@ class PlanCommand : CliktCommand(name = "plan") {
         val groups = graph.parallelGroups()
         if (groups.any { it.size > 1 }) {
             echo("")
-            echo("Parallel groups (future M3 execution):")
+            echo("Parallel groups:")
             for ((i, group) in groups.withIndex()) {
                 val label = if (group.size == 1) group[0]
                     else group.joinToString(", ")
