@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **core**: always take after-snapshot even when agent crashes
 - **core**: correct working directory for CLI, clear FileIndex before after-snapshot
 - **core**: use nanosecond mtime precision, invalidate cache after agent writes
 - **ci**: generate changelog in PR, remove flaky timing assertion (#11)
