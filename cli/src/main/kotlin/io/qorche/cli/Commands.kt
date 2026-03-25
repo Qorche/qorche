@@ -228,8 +228,8 @@ class DiffCommand : CliktCommand(name = "diff") {
         }
 
         val allSnapshots = orchestrator.history()
-        val fullId1 = allSnapshots.find { it.id.startsWith(resolvedId2) }?.id ?: resolvedId2
-        val fullId2 = allSnapshots.find { it.id.startsWith(id1) }?.id ?: id1
+        val fullId1 = allSnapshots.find { it.id.startsWith(id1) }?.id ?: id1
+        val fullId2 = allSnapshots.find { it.id.startsWith(resolvedId2) }?.id ?: resolvedId2
 
         val diff = orchestrator.diffSnapshots(fullId1, fullId2)
         if (diff == null) {

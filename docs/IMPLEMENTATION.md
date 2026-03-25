@@ -1,7 +1,7 @@
 # Qorche — Implementation Progress
 
-**Current milestone**: M2 (in progress)
-**Last updated**: 2026-03-22
+**Current milestone**: Post-M3 (native library, retry-on-conflict)
+**Last updated**: 2026-03-25
 
 ---
 
@@ -98,16 +98,30 @@ At 5k files: M0 was 0.6x (slower), M1 is 1.4x (faster).
 
 ---
 
-## M3: Parallel execution + MVCC conflict detection (not started)
+## M3: Parallel execution + MVCC conflict detection [COMPLETE]
 
-### Tasks
-- [ ] Execute parallel groups concurrently via coroutines
-- [ ] MVCC conflict detection after parallel task completion
-- [ ] Conflict resolution strategy (fail-fast or merge)
-- [ ] Update benchmarks to measure real parallel execution (not just simulated)
-- [ ] WAL entries for conflict events
-- [ ] Test: two agents modify same file → conflict detected
-- [ ] Test: two agents modify different files → no conflict, both succeed
+**Current milestone**: Post-M3 (native library, retry-on-conflict)
+**Last updated**: 2026-03-25
+
+### Done
+- [x] `Orchestrator.runGraphParallel()` — concurrent execution within parallel groups via coroutines
+- [x] MVCC conflict detection after parallel group completion (pairwise hash set intersection)
+- [x] Conflict resolution strategy: fail-fast (conflicting tasks FAILED, dependents SKIPPED)
+- [x] Scope audit — detects undeclared writes outside task file scopes with group-level attribution
+- [x] `WALEntry.ConflictDetected` and `WALEntry.ScopeViolation` for audit trail
+- [x] `ConflictDetector.detectGroupConflicts()` with O(n²) scaling documented
+- [x] `ConflictDetector.detectScopeViolations()` — group-level, honest attribution
+- [x] `FileIndex` fixed for concurrent access (`ConcurrentHashMap`)
+- [x] Parallel execution benchmarks — 10.7x speedup at 12 independent tasks
+- [x] Diamond DAG benchmarks — near-theoretical-floor parallel timing
+- [x] DAG propagation benchmarks — 500-node chain in 34ms, fan-out in 4ms
+- [x] Realistic file size benchmarks — warm snapshot parity (1.0x) validates mtime cache
+- [x] Real-process integration tests with concurrent disk writes
+- [x] Tests: ParallelExecutionTest (12), benchmark tests (3 new)
+
+### Remaining (deferred)
+- [ ] Retry-on-conflict strategy (re-run loser against updated state)
+- [ ] Cold-start benchmark (no FileIndex, no caches)
 
 ---
 
