@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **ci**: add GraalVM native-image build with cross-platform CI (#9)
 
+### Fixed
+
+- **ci**: generate changelog in PR, remove flaky timing assertion
+
 ## [0.6.1] - 2026-03-25
 ### Fixed
 
