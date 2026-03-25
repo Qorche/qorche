@@ -50,6 +50,11 @@ class FileIndex {
         return hash
     }
 
+    /** Clears all cached entries, forcing rehash on next access. */
+    fun clear() {
+        entries.clear()
+    }
+
     /** Removes the cached entry for the given relative path. */
     fun invalidate(relativePath: String) {
         entries.remove(relativePath)
