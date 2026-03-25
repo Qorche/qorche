@@ -15,7 +15,6 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":agent"))
     implementation("com.github.ajalt.clikt:clikt:5.0.3")
-    implementation("org.xerial:sqlite-jdbc:3.49.1.0")
 }
 
 tasks.register("generateVersionFile") {
@@ -43,6 +42,8 @@ graalvmNative {
             imageName.set("qorche")
             buildArgs.addAll(
                 "--no-fallback",
+                "-Ob",
+                "--gc=serial",
                 "-H:+ReportExceptionStackTraces"
             )
         }
