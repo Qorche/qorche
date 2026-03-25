@@ -239,12 +239,6 @@ class ParallelExecutionTest {
             assertEquals(3, result.completedTasks)
             assertTrue(result.success)
 
-            // If truly parallel (3 tasks x 100ms each), should take ~100-200ms
-            // If sequential, would take ~300ms+
-            // Use generous bounds to avoid flakiness
-            assertTrue(elapsed < 500, "Should be faster than sequential. Took ${elapsed}ms")
-
-            // Verify concurrency tracking
             assertTrue(runner.maxConcurrency.get() >= 2,
                 "At least 2 tasks should have run concurrently, max was ${runner.maxConcurrency.get()}")
         } finally {

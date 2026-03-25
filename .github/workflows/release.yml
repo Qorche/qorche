@@ -37,33 +37,6 @@ jobs:
           node-version: 22
 
       - name: Semantic Release
-        id: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
-
-      - name: Generate changelog
-        if: steps.release.outcome == 'success'
-        uses: orhun/git-cliff-action@v4
-        with:
-          config: cliff.toml
-          args: --output CHANGELOG.md
-
-      - name: Create changelog PR
-        if: steps.release.outcome == 'success'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          BRANCH="chore/changelog-update-$(date +%s)"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
-          git add CHANGELOG.md
-          git diff --cached --quiet && echo "No changelog changes" && exit 0
-          git commit -m "chore: update changelog [skip ci]"
-          git push origin "$BRANCH"
-          gh pr create \
-            --title "chore: update changelog" \
-            --body "Auto-generated changelog update from release workflow." \
-            --base main \
-            --head "$BRANCH"
