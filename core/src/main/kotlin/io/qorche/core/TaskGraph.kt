@@ -33,7 +33,7 @@ class TaskGraph(definitions: List<TaskDefinition>) {
             result.add(id)
         }
 
-        for (id in nodes.keys) {
+        for (id in nodes.keys.sorted()) {
             visit(id)
         }
         return result
@@ -93,7 +93,7 @@ class TaskGraph(definitions: List<TaskDefinition>) {
             black.add(id)
         }
 
-        for (id in nodes.keys) {
+        for (id in nodes.keys.sorted()) {
             if (id in white) {
                 dfs(id, mutableListOf())
             }
