@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **ci**: add UPX compression for native binaries (Linux/Windows)
 - **cli**: remove unused sqlite-jdbc dependency, native binary 55MB → 20MB
 - **ci**: optimize native binary size with serial GC and platform-specific sqlite
 
