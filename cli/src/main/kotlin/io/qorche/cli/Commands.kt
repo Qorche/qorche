@@ -26,7 +26,7 @@ class QorcheCommand : CliktCommand(name = "qorche") {
     override fun run() = Unit
 
     init {
-        subcommands(RunCommand(), PlanCommand(), HistoryCommand(), DiffCommand(), VersionCommand())
+        subcommands(RunCommand(), PlanCommand(), StatusCommand(), LogsCommand(), HistoryCommand(), DiffCommand(), VersionCommand())
     }
 }
 
@@ -130,7 +130,7 @@ class RunCommand : CliktCommand(name = "run") {
                 graph = graph,
                 runner = runner,
                 onTaskStart = { def ->
-                    if (output == "text") echo("[${def.id}] Starting: ${def.instruction}")
+                    if (output == "text") echo("${Terminal.cyan("[${def.id}]")} Starting: ${def.instruction}")
                 },
                 onTaskComplete = { taskId, outcome ->
                     if (output == "text") {
@@ -138,20 +138,20 @@ class RunCommand : CliktCommand(name = "run") {
                             TaskStatus.COMPLETED -> {
                                 val diff = outcome.runResult?.diff
                                 if (diff != null && diff.totalChanges > 0) {
-                                    echo("[${taskId}] Done: ${diff.summary()}")
+                                    echo("${Terminal.green("[${taskId}]")} Done: ${diff.summary()}")
                                 } else {
-                                    echo("[${taskId}] Done (no changes)")
+                                    echo("${Terminal.green("[${taskId}]")} Done (no changes)")
                                 }
                             }
-                            TaskStatus.FAILED -> echo("[${taskId}] FAILED: ${outcome.skipReason ?: "non-zero exit"}")
-                            TaskStatus.SKIPPED -> echo("[${taskId}] SKIPPED: ${outcome.skipReason}")
+                            TaskStatus.FAILED -> echo("${Terminal.red("[${taskId}]")} FAILED: ${outcome.skipReason ?: "non-zero exit"}")
+                            TaskStatus.SKIPPED -> echo("${Terminal.dim("[${taskId}]")} SKIPPED: ${outcome.skipReason}")
                             else -> {}
                         }
                     }
                 },
                 onConflict = { conflict ->
                     if (output == "text") {
-                        echo("[CONFLICT] ${conflict.taskA} <-> ${conflict.taskB}: ${conflict.conflictingFiles.joinToString(", ")}")
+                        echo("${Terminal.red("[CONFLICT]")} ${conflict.taskA} <-> ${conflict.taskB}: ${conflict.conflictingFiles.joinToString(", ")}")
                     }
                 },
                 onOutput = { line ->
