@@ -1,14 +1,21 @@
 package io.qorche.cli
 
 object Terminal {
+    var forceColor: Boolean? = null
+
     private val colorEnabled: Boolean by lazy {
-        System.getenv("NO_COLOR") == null
+        forceColor ?: (
+            System.getenv("NO_COLOR") == null
             && System.getenv("TERM") != "dumb"
-            && System.console() != null
+            && (System.console() != null
+                || System.getenv("TERM") != null
+                || System.getenv("WT_SESSION") != null
+                || System.getenv("COLORTERM") != null)
+        )
     }
 
     private fun ansi(code: String, text: String): String =
-        if (colorEnabled) "\u001b[${code}m$text\u001b[0m" else text
+        if (forceColor ?: colorEnabled) "\u001b[${code}m$text\u001b[0m" else text
 
     fun green(text: String) = ansi("32", text)
     fun red(text: String) = ansi("31", text)
