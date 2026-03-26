@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **ci**: enable UPX on Windows, disable strip to prevent binary corruption
 - **ci**: fix Windows native build, add local build support
 
 ## [0.7.2] - 2026-03-25
