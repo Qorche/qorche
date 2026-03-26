@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **ci**: trigger release on PR merge via pull_request closed event
+- **core**: harden error handling and add missing tests
+- **ci**: trigger release on PR merge (#22)
 - **ci**: pin to gradle/actions@v4 to avoid proprietary caching license (#20)
 - **ci**: auto-trigger release from CI after tests pass on main (#19)
 
