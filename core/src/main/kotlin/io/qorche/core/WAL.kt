@@ -13,6 +13,14 @@ import kotlin.io.path.createParentDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readLines
 
+/**
+ * Sealed hierarchy of write-ahead log entries.
+ *
+ * Every state-changing action is logged as a WAL entry before the change is applied.
+ * Entries are serialized as JSON Lines (one JSON object per line, append-only) to
+ * `.qorche/wal.jsonl`. This enables replay, audit, and post-mortem debugging without
+ * relying on agent self-reports.
+ */
 @Serializable
 sealed class WALEntry {
     abstract val timestamp: Instant
@@ -84,10 +92,17 @@ sealed class WALEntry {
     ) : WALEntry()
 }
 
+/**
+ * Append-only writer for the write-ahead log.
+ *
+ * Each [WALEntry] is serialized as a single JSON line and appended to the WAL file.
+ * Thread-safe for single-writer use; concurrent parallel tasks use a mutex externally.
+ */
 class WALWriter(private val walFile: Path) {
 
     private val json = Json { prettyPrint = false }
 
+    /** Serialize and append a single entry to the WAL file. */
     fun append(entry: WALEntry) {
         walFile.createParentDirectories()
         val line = json.encodeToString(entry) + "\n"
@@ -99,6 +114,7 @@ class WALWriter(private val walFile: Path) {
         )
     }
 
+    /** Read and deserialize all entries from the WAL file. */
     fun readAll(): List<WALEntry> {
         if (!walFile.exists()) return emptyList()
         return walFile.readLines()
