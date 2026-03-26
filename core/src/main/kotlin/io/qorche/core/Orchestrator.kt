@@ -25,6 +25,7 @@ class Orchestrator(private val workDir: Path) {
         fileIndex.loadFrom(fileIndexPath)
     }
 
+    /** Result of a single task execution: agent output, filesystem diff, and snapshots. */
     data class RunResult(
         val agentResult: AgentResult,
         val diff: SnapshotDiff,
@@ -32,6 +33,12 @@ class Orchestrator(private val workDir: Path) {
         val afterSnapshot: Snapshot
     )
 
+    /**
+     * Aggregate result of executing an entire task graph.
+     *
+     * Contains per-task outcomes, detected conflicts, scope violations,
+     * and summary counters. [success] is true only when zero tasks failed.
+     */
     data class GraphResult(
         val project: String,
         val taskResults: Map<String, TaskOutcome>,
@@ -48,6 +55,13 @@ class Orchestrator(private val workDir: Path) {
         val hasScopeViolations: Boolean get() = scopeViolations.isNotEmpty()
     }
 
+    /**
+     * Outcome of a single task within a graph execution.
+     *
+     * @property runResult Present when the task actually executed (not skipped).
+     * @property skipReason Human-readable reason if the task was skipped or failed.
+     * @property retryCount Number of retry attempts made due to MVCC conflicts.
+     */
     data class TaskOutcome(
         val taskId: String,
         val status: TaskStatus,
@@ -226,15 +240,6 @@ class Orchestrator(private val workDir: Path) {
         )
     }
 
-    /**
-     * Execute a task graph with parallel execution within groups.
-     *
-     * Tasks in the same parallel group (no dependencies between them) run concurrently.
-     * After each group completes, MVCC conflict detection checks for write-write conflicts.
-     *
-     * Strategy on conflict: fail-fast. Conflicting tasks are marked FAILED, and their
-     * dependents are skipped. Non-conflicting tasks in the same group succeed normally.
-     */
     /**
      * Execute a task graph with parallel execution within groups.
      *
