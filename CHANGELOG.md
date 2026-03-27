@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - remove WORKPLAN.md, backlog tracked in PHASE1_PLAN.md and project memory
 - mark Phase 1, M3, and CLI roadmap as complete
 
+### Fixed
+
+- show accurate dev version from git commit distance
+
 ### Testing
 
 - add edge case and serialization round-trip tests (17 tests)
