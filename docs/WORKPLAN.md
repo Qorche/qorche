@@ -1,73 +1,49 @@
 # Qorche — Active Work Plan
 
-Tasks for upcoming sessions. Pick from the top, mark as in-progress with your session ID, complete, and move to done.
+> **Phase 1 (M0–M2), parallel execution (M3), and CLI roadmap are complete.**
+> Qorche is positioned as an **infrastructure/orchestration layer** — a library
+> that other tools embed, not an end-user CLI product. The CLI serves as a
+> reference implementation.
 
 ---
 
-## Next: CLI Improvements
+## Priority: Library Distribution
 
-### 1. Help text for all commands
+### 1. Maven publish
 **Status:** TODO
 **Effort:** Small
-**Files:** `cli/.../Commands.kt`
 
-Add Clikt help descriptions to every command and option. `qorche --help` should show useful descriptions, not bare names.
+Publish `io.qorche:core` to Maven Local (then Central). This is the highest-priority
+distribution channel — lets any JVM project (agent frameworks, build tools, CI plugins)
+embed qorche's conflict detection and DAG scheduling directly.
 
-### 2. Per-task prefixed stdout
-**Status:** TODO
-**Effort:** Small
-**Files:** `Orchestrator.kt`, `Commands.kt`
-
-Add `onTaskOutput: (taskId: String, line: String) -> Unit` callback to `runGraphParallel`. CLI shows `[task-id] output line` instead of `[agent] output line`.
-
-### 3. Exit codes
-**Status:** TODO
-**Effort:** Small
-**Files:** `Commands.kt`
-
-- Exit 0: all tasks succeeded
-- Exit 1: one or more tasks failed
-- Exit 2: orchestrator error (bad YAML, cycle, file not found)
-
-### 4. `qorche status` command
-**Status:** TODO
-**Effort:** Medium
-**Files:** `Commands.kt`
-
-Show `.qorche/` state: snapshot count, WAL entries, file index size, log files, last run timestamp.
-
-### 5. `qorche logs` command
-**Status:** TODO
-**Effort:** Small
-**Files:** `Commands.kt`
-
-- `qorche logs` — list log files
-- `qorche logs <taskId>` — show a specific task's log
-
-### 6. `--no-color` flag
-**Status:** TODO
-**Effort:** Small
-**Files:** `Commands.kt`
-
-Add to parent `QorcheCommand`. No-op for now, establishes CLI contract for future color support.
-
----
-
-## Backlog
-
-### `.qorignore` file
-**Status:** TODO
-**Effort:** Medium
-**Files:** `Snapshot.kt`
-
-User-configurable ignore patterns. Consider reading `.gitignore` as baseline. Current hardcoded list misses `.kotlin/`, `node_modules/`, etc.
-
-### GraalVM shared library spike
+### 2. GraalVM shared library spike
 **Status:** TODO
 **Effort:** Medium
 **Files:** New `native/` module
 
-Export one function via `--shared`, call from Python ctypes. Design in `memory/project_graalvm_shared_library.md`.
+Export core API via `--shared` for Python/Node/Go FFI consumers. Enables non-JVM
+ecosystems to use qorche without a JVM dependency. Design in
+`memory/project_graalvm_shared_library.md`.
+
+### 3. `.qorignore` file
+**Status:** TODO
+**Effort:** Medium
+**Files:** `Snapshot.kt`
+
+User-configurable ignore patterns. Consider reading `.gitignore` as baseline.
+Current hardcoded list misses `.kotlin/`, `node_modules/`, etc.
+
+---
+
+## Lower Priority
+
+### `qorche ci` / GitHub Action
+**Status:** TODO
+**Effort:** Large
+
+Run CI tasks (lint, format, test) concurrently on a single checkout instead of
+isolated matrix jobs. Compelling on self-hosted runners with persistent workspaces.
 
 ### More dogfood testing
 **Status:** TODO
@@ -77,16 +53,19 @@ Export one function via `--shared`, call from Python ctypes. Design in `memory/p
 - Diamond DAG with real agents
 - Scope violation with real agents
 
-### Maven Local publish
-**Status:** TODO
-**Effort:** Small
+### CLI distribution (Homebrew, npm)
+**Status:** Deferred
 
-Publish `io.qorche:core` for JVM consumers.
+Not the focus. CLI is a reference implementation. Revisit if end-user demand materialises.
 
 ---
 
 ## Done
 
+- `qorche status` command (v0.8.x)
+- `qorche logs` command (v0.8.x)
+- Exit codes: 0 success, 1 failure, 2 orchestrator error (v0.8.x)
+- JSON output with `--json` flag (v0.8.x)
 - Per-task log files (v0.7.2)
 - Cold-start benchmark (v0.7.2)
 - Native binary optimization 55MB → 20MB (v0.7.2)
@@ -98,3 +77,6 @@ Publish `io.qorche:core` for JVM consumers.
 - Parallel execution + MVCC (v0.4.0)
 - CI/CD pipeline (v0.5.0)
 - Semantic-release + git-cliff (v0.5.0)
+- KDocs on public API (v0.8.0)
+- Error handling hardening (v0.8.1)
+- ConflictDetectorTest + SnapshotStoreTest (v0.8.1)
