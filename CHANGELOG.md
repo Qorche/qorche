@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 
+- **core**: add Orchestrator.clean() API and qorche clean command
 - **core**: add @Serializable to result types and return Result from runTask
 
 ### Documentation
