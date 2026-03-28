@@ -311,6 +311,98 @@ class SnapshotTest {
         }
     }
 
+    // ── Preflight check tests ─────────────────────────────────
+
+    @Test
+    fun `preflight returns null for small repo`() {
+        val root = Files.createTempDirectory("qorche-preflight-test")
+        try {
+            for (i in 1..100) {
+                root.resolve("file$i.txt").writeText("content $i\n")
+            }
+
+            val prevAlgo = SnapshotCreator.hashAlgorithm
+            SnapshotCreator.hashAlgorithm = HashAlgorithm.SHA1
+            val result = SnapshotCreator.preflightCheck(root)
+            SnapshotCreator.hashAlgorithm = prevAlgo
+
+            assertEquals(null, result)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `preflight returns null when already using crc32c`() {
+        val root = Files.createTempDirectory("qorche-preflight-test")
+        try {
+            val dir = root.resolve("src").createDirectories()
+            for (i in 1..SnapshotCreator.LARGE_REPO_FILE_THRESHOLD) {
+                dir.resolve("file$i.txt").writeText("content $i\n")
+            }
+
+            val prevAlgo = SnapshotCreator.hashAlgorithm
+            SnapshotCreator.hashAlgorithm = HashAlgorithm.CRC32C
+            val result = SnapshotCreator.preflightCheck(root)
+            SnapshotCreator.hashAlgorithm = prevAlgo
+
+            assertEquals(null, result)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `preflight suggests crc32c for large repo with sha1`() {
+        val root = Files.createTempDirectory("qorche-preflight-test")
+        try {
+            val dir = root.resolve("src").createDirectories()
+            for (i in 1..SnapshotCreator.LARGE_REPO_FILE_THRESHOLD) {
+                dir.resolve("file$i.txt").writeText("content $i\n")
+            }
+
+            val prevAlgo = SnapshotCreator.hashAlgorithm
+            SnapshotCreator.hashAlgorithm = HashAlgorithm.SHA1
+            val result = SnapshotCreator.preflightCheck(root)
+            SnapshotCreator.hashAlgorithm = prevAlgo
+
+            requireNotNull(result)
+            assertEquals(SnapshotCreator.LARGE_REPO_FILE_THRESHOLD, result.fileCount)
+            assertEquals(HashAlgorithm.SHA1, result.currentAlgorithm)
+            assertEquals(HashAlgorithm.CRC32C, result.suggestedAlgorithm)
+            assertTrue("--hash crc32c" in result.message())
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `preflight message includes file count`() {
+        val result = PreflightResult(
+            fileCount = 12345,
+            currentAlgorithm = HashAlgorithm.SHA256,
+            suggestedAlgorithm = HashAlgorithm.CRC32C
+        )
+        assertEquals("12345 files in scope. Consider --hash crc32c for faster snapshots.", result.message())
+    }
+
+    @Test
+    fun `countFiles respects ignore patterns`() {
+        val root = Files.createTempDirectory("qorche-preflight-test")
+        try {
+            root.resolve("src").createDirectories()
+            root.resolve("src/a.txt").writeText("a\n")
+            root.resolve("build").createDirectories()
+            root.resolve("build/out.jar").writeText("jar\n")
+            root.resolve(".git").createDirectories()
+            root.resolve(".git/config").writeText("git\n")
+
+            assertEquals(1, SnapshotCreator.countFiles(root))
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
     @Test
     fun `diff summary with no changes`() = runBlocking {
         val root = Files.createTempDirectory("qorche-snap-test")

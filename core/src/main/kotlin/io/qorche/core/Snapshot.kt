@@ -70,6 +70,16 @@ data class SnapshotDiff(
     }
 }
 
+/** Suggestion from a preflight check when a large repo could benefit from a faster hash algorithm. */
+data class PreflightResult(
+    val fileCount: Int,
+    val currentAlgorithm: HashAlgorithm,
+    val suggestedAlgorithm: HashAlgorithm
+) {
+    fun message(): String =
+        "$fileCount files in scope. Consider --hash ${suggestedAlgorithm.name.lowercase()} for faster snapshots."
+}
+
 /** Factory for creating snapshots and computing diffs between them. */
 object SnapshotCreator {
 
@@ -133,6 +143,33 @@ object SnapshotCreator {
     /** Reset ignore patterns to defaults (useful for testing). */
     fun resetIgnorePatterns() {
         ignorePrefixes = DEFAULT_IGNORE_PREFIXES
+    }
+
+    /** Threshold file count above which a faster hash algorithm is recommended. */
+    const val LARGE_REPO_FILE_THRESHOLD = 5_000
+
+    /**
+     * Count the number of trackable files in the directory (respects ignore patterns).
+     * Useful for preflight checks before committing to a full snapshot.
+     */
+    fun countFiles(directory: Path): Int = collectFiles(directory).size
+
+    /**
+     * Run a preflight check and return a suggestion if the repo is large enough
+     * that switching hash algorithms would meaningfully reduce overhead.
+     *
+     * Returns null if no suggestion is warranted (small repo or already using CRC32C).
+     */
+    fun preflightCheck(directory: Path): PreflightResult? {
+        val fileCount = countFiles(directory)
+        if (fileCount < LARGE_REPO_FILE_THRESHOLD) return null
+        if (hashAlgorithm == HashAlgorithm.CRC32C) return null
+
+        return PreflightResult(
+            fileCount = fileCount,
+            currentAlgorithm = hashAlgorithm,
+            suggestedAlgorithm = HashAlgorithm.CRC32C
+        )
     }
 
     /**

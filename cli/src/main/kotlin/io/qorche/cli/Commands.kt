@@ -40,10 +40,11 @@ class RunCommand : CliktCommand(name = "run") {
     private val verbose by option("--verbose", "-v", help = "Show agent output").flag()
     private val skipPermissions by option("--skip-permissions", help = "Pass --dangerously-skip-permissions to Claude Code").flag()
     private val output by option("--output", "-o", help = "Output format: text or json").default("text")
-    private val hashAlgorithm by option("--hash", help = "Hash algorithm: crc32c (fastest), sha1 (default, same as Git), sha256 (cryptographic)").default("sha1")
+    private val hashAlgorithm by option("--hash", help = "Hash algorithm: crc32c (fastest), sha1 (default, same as Git), sha256 (cryptographic)")
 
     override fun run() {
-        SnapshotCreator.hashAlgorithm = when (hashAlgorithm.lowercase()) {
+        val hashExplicit = hashAlgorithm != null
+        SnapshotCreator.hashAlgorithm = when (hashAlgorithm?.lowercase()) {
             "crc32c", "crc32" -> HashAlgorithm.CRC32C
             "sha256", "sha-256" -> HashAlgorithm.SHA256
             else -> HashAlgorithm.SHA1
@@ -53,6 +54,13 @@ class RunCommand : CliktCommand(name = "run") {
         val extraArgs = if (skipPermissions) listOf("--dangerously-skip-permissions") else emptyList()
         val runner = ClaudeCodeAdapter(extraArgs = extraArgs)
         val startTime = System.currentTimeMillis()
+
+        if (!hashExplicit && output == "text") {
+            val preflight = SnapshotCreator.preflightCheck(workDir)
+            if (preflight != null) {
+                echo("${Terminal.dim("Hint:")} ${preflight.message()}")
+            }
+        }
 
         val isYamlFile = instructionOrFile.endsWith(".yaml") || instructionOrFile.endsWith(".yml")
 
