@@ -388,7 +388,7 @@ class SnapshotTest {
         assertTrue("12345 files in scope" in msg)
         assertTrue("threshold: 5000" in msg)
         assertTrue("--hash crc32c" in msg)
-        assertTrue("files: scopes" in msg)
+        assertTrue("scope tasks" in msg)
     }
 
     @Test

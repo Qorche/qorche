@@ -80,7 +80,7 @@ data class PreflightResult(
     fun message(): String =
         "$fileCount files in scope (threshold: $threshold). " +
         "Consider --hash ${suggestedAlgorithm.name.lowercase()} for faster snapshots, " +
-        "or add files: scopes to your tasks to reduce snapshot overhead."
+        "or scope tasks with 'files:' in your YAML to reduce snapshot overhead."
 }
 
 /** Factory for creating snapshots and computing diffs between them. */
