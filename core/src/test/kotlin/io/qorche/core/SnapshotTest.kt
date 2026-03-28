@@ -377,13 +377,18 @@ class SnapshotTest {
     }
 
     @Test
-    fun `preflight message includes file count`() {
+    fun `preflight message includes file count and threshold`() {
         val result = PreflightResult(
             fileCount = 12345,
+            threshold = 5000,
             currentAlgorithm = HashAlgorithm.SHA256,
             suggestedAlgorithm = HashAlgorithm.CRC32C
         )
-        assertEquals("12345 files in scope. Consider --hash crc32c for faster snapshots.", result.message())
+        val msg = result.message()
+        assertTrue("12345 files in scope" in msg)
+        assertTrue("threshold: 5000" in msg)
+        assertTrue("--hash crc32c" in msg)
+        assertTrue("files: scopes" in msg)
     }
 
     @Test

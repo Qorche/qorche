@@ -73,11 +73,14 @@ data class SnapshotDiff(
 /** Suggestion from a preflight check when a large repo could benefit from a faster hash algorithm. */
 data class PreflightResult(
     val fileCount: Int,
+    val threshold: Int,
     val currentAlgorithm: HashAlgorithm,
     val suggestedAlgorithm: HashAlgorithm
 ) {
     fun message(): String =
-        "$fileCount files in scope. Consider --hash ${suggestedAlgorithm.name.lowercase()} for faster snapshots."
+        "$fileCount files in scope (threshold: $threshold). " +
+        "Consider --hash ${suggestedAlgorithm.name.lowercase()} for faster snapshots, " +
+        "or add files: scopes to your tasks to reduce snapshot overhead."
 }
 
 /** Factory for creating snapshots and computing diffs between them. */
@@ -168,6 +171,7 @@ object SnapshotCreator {
 
         return PreflightResult(
             fileCount = fileCount,
+            threshold = threshold,
             currentAlgorithm = hashAlgorithm,
             suggestedAlgorithm = HashAlgorithm.CRC32C
         )

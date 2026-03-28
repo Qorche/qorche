@@ -41,7 +41,7 @@ class RunCommand : CliktCommand(name = "run") {
     private val skipPermissions by option("--skip-permissions", help = "Pass --dangerously-skip-permissions to Claude Code").flag()
     private val output by option("--output", "-o", help = "Output format: text or json").default("text")
     private val hashAlgorithm by option("--hash", help = "Hash algorithm: crc32c (fastest), sha1 (default, same as Git), sha256 (cryptographic)")
-    private val preflightThreshold by option("--preflight-threshold", help = "File count threshold for hash algorithm suggestion (default: ${SnapshotCreator.DEFAULT_LARGE_REPO_THRESHOLD})").int()
+    private val preflightThreshold by option("--preflight-threshold", help = "File count above which a faster hash algorithm is suggested (default: ${SnapshotCreator.DEFAULT_LARGE_REPO_THRESHOLD})").int()
 
     override fun run() {
         val hashExplicit = hashAlgorithm != null
