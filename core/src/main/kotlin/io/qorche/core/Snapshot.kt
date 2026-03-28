@@ -17,14 +17,19 @@ import kotlin.io.path.relativeTo
 /**
  * Pluggable hash algorithm for file content hashing.
  *
- * [CRC32C] is the default: hardware-accelerated on modern x86/ARM CPUs,
- * roughly 50x faster than SHA-256. Not cryptographic, but Qorche only
- * needs change detection, not tamper resistance.
+ * [SHA1] is the default: same algorithm Git uses, 160-bit output (no collision
+ * risk for change detection), ~50% faster than SHA-256. Its cryptographic
+ * weakness (crafted collisions) is irrelevant for Qorche's use case.
+ *
+ * [CRC32C] is the fastest option: hardware-accelerated on modern x86/ARM CPUs.
+ * 32-bit output means theoretical collision risk at very large file counts,
+ * but negligible for per-path change detection.
  *
  * [SHA256] is available when cryptographic guarantees are needed.
  */
 enum class HashAlgorithm {
     CRC32C,
+    SHA1,
     SHA256
 }
 
@@ -69,7 +74,7 @@ data class SnapshotDiff(
 object SnapshotCreator {
 
     /** The hash algorithm used for all snapshot operations. Default: CRC32C. */
-    var hashAlgorithm: HashAlgorithm = HashAlgorithm.CRC32C
+    var hashAlgorithm: HashAlgorithm = HashAlgorithm.SHA1
 
     /** Default ignore prefixes — common VCS, IDE, build, and dependency directories. */
     val DEFAULT_IGNORE_PREFIXES = listOf(
@@ -247,9 +252,10 @@ object SnapshotCreator {
  * Hash file contents using the given algorithm, streaming through a buffer.
  * Strips `\r` bytes before hashing for cross-platform line-ending consistency.
  */
-fun hashFile(file: Path, algorithm: HashAlgorithm = HashAlgorithm.CRC32C): String = when (algorithm) {
+fun hashFile(file: Path, algorithm: HashAlgorithm = HashAlgorithm.SHA1): String = when (algorithm) {
     HashAlgorithm.CRC32C -> hashFileCrc32c(file)
-    HashAlgorithm.SHA256 -> hashFileSha256(file)
+    HashAlgorithm.SHA1 -> hashFileMessageDigest(file, "SHA-1")
+    HashAlgorithm.SHA256 -> hashFileMessageDigest(file, "SHA-256")
 }
 
 private fun hashFileCrc32c(file: Path): String {
@@ -269,8 +275,8 @@ private fun hashFileCrc32c(file: Path): String {
     return "%08x".format(crc.value)
 }
 
-private fun hashFileSha256(file: Path): String {
-    val digest = MessageDigest.getInstance("SHA-256")
+private fun hashFileMessageDigest(file: Path, algorithm: String): String {
+    val digest = MessageDigest.getInstance(algorithm)
     val buffer = ByteArray(8192)
     Files.newInputStream(file).use { input ->
         while (true) {

@@ -207,15 +207,44 @@ class SnapshotTest {
     }
 
     @Test
-    fun `crc32c and sha256 produce different hashes`() {
+    fun `sha1 is consistent for same content`() {
+        val root = Files.createTempDirectory("qorche-hash-test")
+        try {
+            root.resolve("a.txt").writeText("hello world\n")
+            val h1 = hashFile(root.resolve("a.txt"), HashAlgorithm.SHA1)
+            val h2 = hashFile(root.resolve("a.txt"), HashAlgorithm.SHA1)
+            assertEquals(h1, h2)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `sha1 normalises line endings`() {
+        val root = Files.createTempDirectory("qorche-hash-test")
+        try {
+            root.resolve("unix.txt").writeText("line1\nline2\n")
+            root.resolve("windows.txt").writeText("line1\r\nline2\r\n")
+            assertEquals(
+                hashFile(root.resolve("unix.txt"), HashAlgorithm.SHA1),
+                hashFile(root.resolve("windows.txt"), HashAlgorithm.SHA1)
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `all algorithms produce different length hashes`() {
         val root = Files.createTempDirectory("qorche-hash-test")
         try {
             root.resolve("a.txt").writeText("hello world\n")
             val crc = hashFile(root.resolve("a.txt"), HashAlgorithm.CRC32C)
-            val sha = hashFile(root.resolve("a.txt"), HashAlgorithm.SHA256)
-            assertNotEquals(crc, sha)
+            val sha1 = hashFile(root.resolve("a.txt"), HashAlgorithm.SHA1)
+            val sha256 = hashFile(root.resolve("a.txt"), HashAlgorithm.SHA256)
             assertEquals(8, crc.length, "CRC32C should be 8 hex chars")
-            assertEquals(64, sha.length, "SHA-256 should be 64 hex chars")
+            assertEquals(40, sha1.length, "SHA-1 should be 40 hex chars")
+            assertEquals(64, sha256.length, "SHA-256 should be 64 hex chars")
         } finally {
             root.toFile().deleteRecursively()
         }
@@ -262,17 +291,21 @@ class SnapshotTest {
             SnapshotCreator.hashAlgorithm = HashAlgorithm.CRC32C
             val crcSnap = SnapshotCreator.create(root, "crc")
 
+            SnapshotCreator.hashAlgorithm = HashAlgorithm.SHA1
+            val sha1Snap = SnapshotCreator.create(root, "sha1")
+
             SnapshotCreator.hashAlgorithm = HashAlgorithm.SHA256
-            val shaSnap = SnapshotCreator.create(root, "sha")
+            val sha256Snap = SnapshotCreator.create(root, "sha256")
 
             SnapshotCreator.hashAlgorithm = prevAlgo
 
             val crcHash = crcSnap.fileHashes["a.txt"]!!
-            val shaHash = shaSnap.fileHashes["a.txt"]!!
+            val sha1Hash = sha1Snap.fileHashes["a.txt"]!!
+            val sha256Hash = sha256Snap.fileHashes["a.txt"]!!
 
             assertEquals(8, crcHash.length)
-            assertEquals(64, shaHash.length)
-            assertNotEquals(crcHash, shaHash)
+            assertEquals(40, sha1Hash.length)
+            assertEquals(64, sha256Hash.length)
         } finally {
             root.toFile().deleteRecursively()
         }

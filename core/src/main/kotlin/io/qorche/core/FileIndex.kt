@@ -35,7 +35,7 @@ class FileIndex {
     fun getOrComputeHash(
         file: Path,
         relativePath: String,
-        algorithm: HashAlgorithm = HashAlgorithm.CRC32C
+        algorithm: HashAlgorithm = HashAlgorithm.SHA1
     ): String {
         val size = file.fileSize()
         val fileTime = file.getLastModifiedTime()

@@ -40,12 +40,13 @@ class RunCommand : CliktCommand(name = "run") {
     private val verbose by option("--verbose", "-v", help = "Show agent output").flag()
     private val skipPermissions by option("--skip-permissions", help = "Pass --dangerously-skip-permissions to Claude Code").flag()
     private val output by option("--output", "-o", help = "Output format: text or json").default("text")
-    private val hashAlgorithm by option("--hash", help = "Hash algorithm: crc32c (fast, default) or sha256 (cryptographic)").default("crc32c")
+    private val hashAlgorithm by option("--hash", help = "Hash algorithm: crc32c (fastest), sha1 (default, same as Git), sha256 (cryptographic)").default("sha1")
 
     override fun run() {
         SnapshotCreator.hashAlgorithm = when (hashAlgorithm.lowercase()) {
+            "crc32c", "crc32" -> HashAlgorithm.CRC32C
             "sha256", "sha-256" -> HashAlgorithm.SHA256
-            else -> HashAlgorithm.CRC32C
+            else -> HashAlgorithm.SHA1
         }
         val workDir = Path.of(System.getProperty("user.dir"))
         val orchestrator = Orchestrator(workDir)
