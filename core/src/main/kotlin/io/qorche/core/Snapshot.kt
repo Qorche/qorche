@@ -10,6 +10,7 @@ import kotlinx.serialization.Serializable
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.CRC32C
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.relativeTo
@@ -69,6 +70,13 @@ data class SnapshotDiff(
         if (isEmpty()) append("no changes")
     }
 }
+
+/** Progress update during snapshot creation. */
+data class SnapshotProgress(
+    val phase: String,
+    val current: Int,
+    val total: Int
+)
 
 /** Suggestion from a preflight check when a large repo could benefit from a faster hash algorithm. */
 data class PreflightResult(
@@ -184,10 +192,12 @@ object SnapshotCreator {
         directory: Path,
         description: String,
         parentId: String? = null,
-        fileIndex: FileIndex? = null
+        fileIndex: FileIndex? = null,
+        onProgress: ((SnapshotProgress) -> Unit)? = null
     ): Snapshot {
         val files = collectFiles(directory)
-        val hashes = hashFilesParallel(directory, files, fileIndex)
+        onProgress?.invoke(SnapshotProgress("scanning", files.size, files.size))
+        val hashes = hashFilesParallel(directory, files, fileIndex, onProgress)
 
         return Snapshot(
             id = generateId(),
@@ -207,7 +217,8 @@ object SnapshotCreator {
         scopePaths: List<String>,
         description: String,
         parentId: String? = null,
-        fileIndex: FileIndex? = null
+        fileIndex: FileIndex? = null,
+        onProgress: ((SnapshotProgress) -> Unit)? = null
     ): Snapshot {
         val files = mutableListOf<Path>()
 
@@ -225,7 +236,8 @@ object SnapshotCreator {
             }
         }
 
-        val hashes = hashFilesParallel(directory, files, fileIndex)
+        onProgress?.invoke(SnapshotProgress("scanning", files.size, files.size))
+        val hashes = hashFilesParallel(directory, files, fileIndex, onProgress)
 
         return Snapshot(
             id = generateId(),
@@ -266,19 +278,25 @@ object SnapshotCreator {
     private suspend fun hashFilesParallel(
         directory: Path,
         files: List<Path>,
-        fileIndex: FileIndex?
+        fileIndex: FileIndex?,
+        onProgress: ((SnapshotProgress) -> Unit)? = null
     ): Map<String, String> = coroutineScope {
         val algo = hashAlgorithm
-        val batchSize = (files.size / (Runtime.getRuntime().availableProcessors() * 2)).coerceAtLeast(50)
+        val total = files.size
+        val batchSize = (total / (Runtime.getRuntime().availableProcessors() * 2)).coerceAtLeast(50)
+        val processed = AtomicInteger(0)
 
         files.chunked(batchSize).map { batch ->
             async(Dispatchers.IO) {
-                batch.map { file ->
+                val results = batch.map { file ->
                     val relativePath = file.relativeTo(directory).toString().replace("\\", "/")
                     val hash = fileIndex?.getOrComputeHash(file, relativePath, algo)
                         ?: hashFile(file, algo)
                     relativePath to hash
                 }
+                val count = processed.addAndGet(batch.size)
+                onProgress?.invoke(SnapshotProgress("hashing", count, total))
+                results
             }
         }.awaitAll().flatten().toMap()
     }

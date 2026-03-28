@@ -26,6 +26,9 @@ class Orchestrator(private val workDir: Path) {
     private val fileIndexPath = qorcheDir.resolve("file-index.json")
     private val logsDir: Path = qorcheDir.resolve("logs").also { it.createDirectories() }
 
+    /** Optional callback for snapshot progress updates. Set by CLI for user-facing feedback. */
+    var onSnapshotProgress: ((SnapshotProgress) -> Unit)? = null
+
     init {
         fileIndex.loadFrom(fileIndexPath)
         SnapshotCreator.loadIgnoreFile(workDir)
@@ -76,7 +79,8 @@ class Orchestrator(private val workDir: Path) {
         val status: TaskStatus,
         val runResult: RunResult? = null,
         val skipReason: String? = null,
-        val retryCount: Int = 0
+        val retryCount: Int = 0,
+        val elapsedMs: Long = 0
     )
 
     /**
@@ -95,9 +99,9 @@ class Orchestrator(private val workDir: Path) {
         onOutput: (String) -> Unit = {}
     ): Result<RunResult> {
         val beforeSnapshot = if (scopePaths.isNotEmpty()) {
-            SnapshotCreator.createScoped(workDir, scopePaths, "before: $taskId", fileIndex = fileIndex)
+            SnapshotCreator.createScoped(workDir, scopePaths, "before: $taskId", fileIndex = fileIndex, onProgress = onSnapshotProgress)
         } else {
-            SnapshotCreator.create(workDir, "before: $taskId", fileIndex = fileIndex)
+            SnapshotCreator.create(workDir, "before: $taskId", fileIndex = fileIndex, onProgress = onSnapshotProgress)
         }
         snapshotStore.save(beforeSnapshot)
 
@@ -134,10 +138,10 @@ class Orchestrator(private val workDir: Path) {
 
         val afterSnapshot = if (scopePaths.isNotEmpty()) {
             SnapshotCreator.createScoped(workDir, scopePaths, "after: $taskId",
-                parentId = beforeSnapshot.id, fileIndex = fileIndex)
+                parentId = beforeSnapshot.id, fileIndex = fileIndex, onProgress = onSnapshotProgress)
         } else {
             SnapshotCreator.create(workDir, "after: $taskId",
-                parentId = beforeSnapshot.id, fileIndex = fileIndex)
+                parentId = beforeSnapshot.id, fileIndex = fileIndex, onProgress = onSnapshotProgress)
         }
         snapshotStore.save(afterSnapshot)
 
@@ -314,7 +318,7 @@ class Orchestrator(private val workDir: Path) {
                 continue
             }
 
-            val baseSnapshot = SnapshotCreator.create(workDir, "base: group", fileIndex = fileIndex)
+            val baseSnapshot = SnapshotCreator.create(workDir, "base: group", fileIndex = fileIndex, onProgress = onSnapshotProgress)
             snapshotStore.save(baseSnapshot)
 
             val groupResults = coroutineScope {
@@ -323,15 +327,20 @@ class Orchestrator(private val workDir: Path) {
                         val node = graph[taskId]!!
                         onTaskStart(node.definition)
                         node.status = TaskStatus.RUNNING
-                        taskId to executeTaskInternal(taskId, node.definition, runner, walMutex, onOutput)
+                        val startNanos = System.nanoTime()
+                        val result = executeTaskInternal(taskId, node.definition, runner, walMutex, onOutput)
+                        val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000
+                        Triple(taskId, result, elapsedMs)
                     }
                 }.awaitAll()
             }
 
             val changesByTask = mutableMapOf<String, Set<String>>()
             val taskRunResults = mutableMapOf<String, RunResult>()
+            val taskElapsed = mutableMapOf<String, Long>()
 
-            for ((taskId, result) in groupResults) {
+            for ((taskId, result, elapsed) in groupResults) {
+                taskElapsed[taskId] = elapsed
                 val node = graph[taskId]!!
                 when {
                     result.isFailure -> {
@@ -340,7 +349,8 @@ class Orchestrator(private val workDir: Path) {
                         val outcome = TaskOutcome(
                             taskId = taskId,
                             status = TaskStatus.FAILED,
-                            skipReason = "Exception: ${result.exceptionOrNull()?.message}"
+                            skipReason = "Exception: ${result.exceptionOrNull()?.message}",
+                            elapsedMs = elapsed
                         )
                         outcomes[taskId] = outcome
                         onTaskComplete(taskId, outcome)
@@ -357,7 +367,7 @@ class Orchestrator(private val workDir: Path) {
                             node.beforeSnapshotId = runResult.beforeSnapshot.id
                             node.afterSnapshotId = runResult.afterSnapshot.id
                             node.result = runResult.agentResult
-                            val outcome = TaskOutcome(taskId = taskId, status = TaskStatus.FAILED, runResult = runResult)
+                            val outcome = TaskOutcome(taskId = taskId, status = TaskStatus.FAILED, runResult = runResult, elapsedMs = elapsed)
                             outcomes[taskId] = outcome
                             onTaskComplete(taskId, outcome)
                         }
@@ -376,7 +386,7 @@ class Orchestrator(private val workDir: Path) {
                     node.beforeSnapshotId = runResult.beforeSnapshot.id
                     node.afterSnapshotId = runResult.afterSnapshot.id
                     node.result = runResult.agentResult
-                    val outcome = TaskOutcome(taskId = taskId, status = TaskStatus.COMPLETED, runResult = runResult)
+                    val outcome = TaskOutcome(taskId = taskId, status = TaskStatus.COMPLETED, runResult = runResult, elapsedMs = taskElapsed[taskId] ?: 0)
                     outcomes[taskId] = outcome
                     onTaskComplete(taskId, outcome)
                 }
@@ -404,7 +414,7 @@ class Orchestrator(private val workDir: Path) {
                         node.beforeSnapshotId = runResult.beforeSnapshot.id
                         node.afterSnapshotId = runResult.afterSnapshot.id
                         node.result = runResult.agentResult
-                        val outcome = TaskOutcome(taskId = taskId, status = TaskStatus.COMPLETED, runResult = runResult)
+                        val outcome = TaskOutcome(taskId = taskId, status = TaskStatus.COMPLETED, runResult = runResult, elapsedMs = taskElapsed[taskId] ?: 0)
                         outcomes[taskId] = outcome
                         onTaskComplete(taskId, outcome)
                     }
@@ -436,7 +446,8 @@ class Orchestrator(private val workDir: Path) {
                             taskId = loserId,
                             status = TaskStatus.FAILED,
                             runResult = taskRunResults[loserId],
-                            skipReason = "MVCC conflict with '$conflictPeer' (retries disabled)"
+                            skipReason = "MVCC conflict with '$conflictPeer' (retries disabled)",
+                            elapsedMs = taskElapsed[loserId] ?: 0
                         )
                         outcomes[loserId] = outcome
                         onTaskComplete(loserId, outcome)
@@ -462,7 +473,9 @@ class Orchestrator(private val workDir: Path) {
                             conflictingFiles = conflictWith.conflictingFiles.toList()
                         ))
 
+                        val retryStartNanos = System.nanoTime()
                         val retryResult = executeTaskInternal(loserId, def, runner, walMutex, onOutput)
+                        val retryElapsedMs = (System.nanoTime() - retryStartNanos) / 1_000_000
 
                         if (retryResult.isFailure) {
                             node.status = TaskStatus.FAILED
@@ -471,7 +484,8 @@ class Orchestrator(private val workDir: Path) {
                                 taskId = loserId,
                                 status = TaskStatus.FAILED,
                                 skipReason = "Retry attempt $attempt failed: ${retryResult.exceptionOrNull()?.message}",
-                                retryCount = attempt
+                                retryCount = attempt,
+                                elapsedMs = retryElapsedMs
                             )
                             outcomes[loserId] = outcome
                             onTaskComplete(loserId, outcome)
@@ -500,7 +514,8 @@ class Orchestrator(private val workDir: Path) {
                                 taskId = loserId,
                                 status = TaskStatus.COMPLETED,
                                 runResult = retryRunResult,
-                                retryCount = attempt
+                                retryCount = attempt,
+                                elapsedMs = retryElapsedMs
                             )
                             outcomes[loserId] = outcome
                             onTaskComplete(loserId, outcome)
@@ -519,7 +534,8 @@ class Orchestrator(private val workDir: Path) {
                                 status = TaskStatus.FAILED,
                                 runResult = retryRunResult,
                                 skipReason = "MVCC conflict persists after $attempt retry attempts",
-                                retryCount = attempt
+                                retryCount = attempt,
+                                elapsedMs = retryElapsedMs
                             )
                             outcomes[loserId] = outcome
                             onTaskComplete(loserId, outcome)
@@ -545,7 +561,7 @@ class Orchestrator(private val workDir: Path) {
                 graph[taskId]?.definition?.files?.isNotEmpty() == true
             }
             if (hasScopedTasks) {
-                val auditSnapshot = SnapshotCreator.create(workDir, "audit: group", fileIndex = fileIndex)
+                val auditSnapshot = SnapshotCreator.create(workDir, "audit: group", fileIndex = fileIndex, onProgress = onSnapshotProgress)
                 val fullDiff = SnapshotCreator.diff(baseSnapshot, auditSnapshot)
                 val allChangedOnDisk = fullDiff.added + fullDiff.modified + fullDiff.deleted
 
@@ -601,6 +617,7 @@ class Orchestrator(private val workDir: Path) {
         onTaskStart(def)
         node.status = TaskStatus.RUNNING
 
+        val startNanos = System.nanoTime()
         val taskResult = runTask(
             taskId = taskId,
             instruction = def.instruction,
@@ -608,6 +625,7 @@ class Orchestrator(private val workDir: Path) {
             scopePaths = def.files,
             onOutput = onOutput
         )
+        val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000
 
         return if (taskResult.isSuccess) {
             val result = taskResult.getOrThrow()
@@ -617,10 +635,10 @@ class Orchestrator(private val workDir: Path) {
             node.afterSnapshotId = result.afterSnapshot.id
             node.result = result.agentResult
 
-            TaskOutcome(taskId = taskId, status = node.status, runResult = result)
+            TaskOutcome(taskId = taskId, status = node.status, runResult = result, elapsedMs = elapsedMs)
         } else {
             node.status = TaskStatus.FAILED
-            TaskOutcome(taskId = taskId, status = TaskStatus.FAILED, skipReason = "Exception: ${taskResult.exceptionOrNull()?.message}")
+            TaskOutcome(taskId = taskId, status = TaskStatus.FAILED, skipReason = "Exception: ${taskResult.exceptionOrNull()?.message}", elapsedMs = elapsedMs)
         }
     }
 
@@ -637,9 +655,9 @@ class Orchestrator(private val workDir: Path) {
         onOutput: (String) -> Unit
     ): Result<RunResult> = try {
         val beforeSnapshot = if (def.files.isNotEmpty()) {
-            SnapshotCreator.createScoped(workDir, def.files, "before: $taskId", fileIndex = fileIndex)
+            SnapshotCreator.createScoped(workDir, def.files, "before: $taskId", fileIndex = fileIndex, onProgress = onSnapshotProgress)
         } else {
-            SnapshotCreator.create(workDir, "before: $taskId", fileIndex = fileIndex)
+            SnapshotCreator.create(workDir, "before: $taskId", fileIndex = fileIndex, onProgress = onSnapshotProgress)
         }
         snapshotStore.save(beforeSnapshot)
 
@@ -677,10 +695,10 @@ class Orchestrator(private val workDir: Path) {
 
         val afterSnapshot = if (def.files.isNotEmpty()) {
             SnapshotCreator.createScoped(workDir, def.files, "after: $taskId",
-                parentId = beforeSnapshot.id, fileIndex = fileIndex)
+                parentId = beforeSnapshot.id, fileIndex = fileIndex, onProgress = onSnapshotProgress)
         } else {
             SnapshotCreator.create(workDir, "after: $taskId",
-                parentId = beforeSnapshot.id, fileIndex = fileIndex)
+                parentId = beforeSnapshot.id, fileIndex = fileIndex, onProgress = onSnapshotProgress)
         }
         snapshotStore.save(afterSnapshot)
 

@@ -1,5 +1,6 @@
 package io.qorche.cli
 
+import com.github.ajalt.clikt.completion.completionOption
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.arguments.argument
@@ -20,16 +21,27 @@ import kotlinx.coroutines.runBlocking
 import java.nio.file.Path
 import kotlin.system.exitProcess
 
+private fun formatElapsed(ms: Long): String = when {
+    ms >= 1000 -> "%.1fs".format(ms / 1000.0)
+    else -> "${ms}ms"
+}
+
 private fun cliVersion(): String =
     object {}.javaClass.getResourceAsStream("/io/qorche/cli/version.txt")
         ?.bufferedReader()?.readText()?.trim() ?: "dev"
 
 class QorcheCommand : CliktCommand(name = "qorche") {
     override fun help(context: com.github.ajalt.clikt.core.Context) = "Orchestrate concurrent filesystem mutations with MVCC conflict detection"
-    override fun run() = Unit
+
+    private val noColor by option("--no-color", help = "Disable colored output").flag()
+
+    override fun run() {
+        if (noColor) Terminal.forceColor = false
+    }
 
     init {
-        subcommands(RunCommand(), PlanCommand(), StatusCommand(), LogsCommand(), HistoryCommand(), DiffCommand(), CleanCommand(), VersionCommand())
+        completionOption()
+        subcommands(InitCommand(), RunCommand(), PlanCommand(), ValidateCommand(), StatusCommand(), LogsCommand(), HistoryCommand(), DiffCommand(), CleanCommand(), VersionCommand())
     }
 }
 
@@ -52,6 +64,16 @@ class RunCommand : CliktCommand(name = "run") {
         }
         val workDir = Path.of(System.getProperty("user.dir"))
         val orchestrator = Orchestrator(workDir)
+        if (output == "text") {
+            orchestrator.onSnapshotProgress = { progress ->
+                if (progress.total >= 1000) {
+                    when (progress.phase) {
+                        "scanning" -> echo("${Terminal.dim("Scanning ${progress.total} files...")}")
+                        "hashing" -> echo("\r${Terminal.dim("Hashing ${progress.current}/${progress.total} files...")}", trailingNewline = false)
+                    }
+                }
+            }
+        }
         val extraArgs = if (skipPermissions) listOf("--dangerously-skip-permissions") else emptyList()
         val runner = ClaudeCodeAdapter(extraArgs = extraArgs)
         val startTime = System.currentTimeMillis()
@@ -165,13 +187,14 @@ class RunCommand : CliktCommand(name = "run") {
                         when (outcome.status) {
                             TaskStatus.COMPLETED -> {
                                 val diff = outcome.runResult?.diff
+                                val elapsed = Terminal.dim("(${formatElapsed(outcome.elapsedMs)})")
                                 if (diff != null && diff.totalChanges > 0) {
-                                    echo("${Terminal.green("[${taskId}]")} Done: ${diff.summary()}")
+                                    echo("${Terminal.green("[${taskId}]")} Done: ${diff.summary()} $elapsed")
                                 } else {
-                                    echo("${Terminal.green("[${taskId}]")} Done (no changes)")
+                                    echo("${Terminal.green("[${taskId}]")} Done (no changes) $elapsed")
                                 }
                             }
-                            TaskStatus.FAILED -> echo("${Terminal.red("[${taskId}]")} FAILED: ${outcome.skipReason ?: "non-zero exit"}")
+                            TaskStatus.FAILED -> echo("${Terminal.red("[${taskId}]")} FAILED: ${outcome.skipReason ?: "non-zero exit"} ${Terminal.dim("(${formatElapsed(outcome.elapsedMs)})")}")
                             TaskStatus.SKIPPED -> echo("${Terminal.dim("[${taskId}]")} SKIPPED: ${outcome.skipReason}")
                             else -> {}
                         }

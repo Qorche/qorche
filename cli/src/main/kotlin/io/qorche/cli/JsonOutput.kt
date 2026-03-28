@@ -30,7 +30,9 @@ data class TaskOutput(
     val status: String,
     val retryCount: Int = 0,
     val filesChanged: List<String> = emptyList(),
-    val skipReason: String? = null
+    val skipReason: String? = null,
+    @SerialName("elapsed_ms")
+    val elapsedMs: Long = 0
 )
 
 @Serializable
@@ -86,7 +88,8 @@ fun Orchestrator.GraphResult.toJson(project: String, version: String, wallTimeMs
                 status = outcome.status.name,
                 retryCount = outcome.retryCount,
                 filesChanged = changed,
-                skipReason = outcome.skipReason
+                skipReason = outcome.skipReason,
+                elapsedMs = outcome.elapsedMs
             )
         },
         conflicts = conflicts.map { conflict ->
