@@ -145,8 +145,8 @@ object SnapshotCreator {
         ignorePrefixes = DEFAULT_IGNORE_PREFIXES
     }
 
-    /** Threshold file count above which a faster hash algorithm is recommended. */
-    const val LARGE_REPO_FILE_THRESHOLD = 5_000
+    /** Default threshold file count above which a faster hash algorithm is recommended. */
+    const val DEFAULT_LARGE_REPO_THRESHOLD = 5_000
 
     /**
      * Count the number of trackable files in the directory (respects ignore patterns).
@@ -158,11 +158,12 @@ object SnapshotCreator {
      * Run a preflight check and return a suggestion if the repo is large enough
      * that switching hash algorithms would meaningfully reduce overhead.
      *
+     * @param threshold File count at which the suggestion triggers. Default: 5,000.
      * Returns null if no suggestion is warranted (small repo or already using CRC32C).
      */
-    fun preflightCheck(directory: Path): PreflightResult? {
+    fun preflightCheck(directory: Path, threshold: Int = DEFAULT_LARGE_REPO_THRESHOLD): PreflightResult? {
         val fileCount = countFiles(directory)
-        if (fileCount < LARGE_REPO_FILE_THRESHOLD) return null
+        if (fileCount < threshold) return null
         if (hashAlgorithm == HashAlgorithm.CRC32C) return null
 
         return PreflightResult(

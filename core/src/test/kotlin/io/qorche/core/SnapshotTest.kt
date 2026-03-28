@@ -337,7 +337,7 @@ class SnapshotTest {
         val root = Files.createTempDirectory("qorche-preflight-test")
         try {
             val dir = root.resolve("src").createDirectories()
-            for (i in 1..SnapshotCreator.LARGE_REPO_FILE_THRESHOLD) {
+            for (i in 1..SnapshotCreator.DEFAULT_LARGE_REPO_THRESHOLD) {
                 dir.resolve("file$i.txt").writeText("content $i\n")
             }
 
@@ -357,7 +357,7 @@ class SnapshotTest {
         val root = Files.createTempDirectory("qorche-preflight-test")
         try {
             val dir = root.resolve("src").createDirectories()
-            for (i in 1..SnapshotCreator.LARGE_REPO_FILE_THRESHOLD) {
+            for (i in 1..SnapshotCreator.DEFAULT_LARGE_REPO_THRESHOLD) {
                 dir.resolve("file$i.txt").writeText("content $i\n")
             }
 
@@ -367,7 +367,7 @@ class SnapshotTest {
             SnapshotCreator.hashAlgorithm = prevAlgo
 
             requireNotNull(result)
-            assertEquals(SnapshotCreator.LARGE_REPO_FILE_THRESHOLD, result.fileCount)
+            assertEquals(SnapshotCreator.DEFAULT_LARGE_REPO_THRESHOLD, result.fileCount)
             assertEquals(HashAlgorithm.SHA1, result.currentAlgorithm)
             assertEquals(HashAlgorithm.CRC32C, result.suggestedAlgorithm)
             assertTrue("--hash crc32c" in result.message())
@@ -384,6 +384,30 @@ class SnapshotTest {
             suggestedAlgorithm = HashAlgorithm.CRC32C
         )
         assertEquals("12345 files in scope. Consider --hash crc32c for faster snapshots.", result.message())
+    }
+
+    @Test
+    fun `preflight uses custom threshold`() {
+        val root = Files.createTempDirectory("qorche-preflight-test")
+        try {
+            for (i in 1..10) {
+                root.resolve("file$i.txt").writeText("content $i\n")
+            }
+
+            val prevAlgo = SnapshotCreator.hashAlgorithm
+            SnapshotCreator.hashAlgorithm = HashAlgorithm.SHA1
+
+            // Default threshold (5000) — no suggestion
+            assertEquals(null, SnapshotCreator.preflightCheck(root))
+            // Custom threshold (5) — triggers suggestion
+            val result = SnapshotCreator.preflightCheck(root, threshold = 5)
+            requireNotNull(result)
+            assertEquals(10, result.fileCount)
+
+            SnapshotCreator.hashAlgorithm = prevAlgo
+        } finally {
+            root.toFile().deleteRecursively()
+        }
     }
 
     @Test
