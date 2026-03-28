@@ -10,7 +10,9 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.int
 import io.qorche.agent.ClaudeCodeAdapter
 import io.qorche.core.CycleDetectedException
+import io.qorche.core.HashAlgorithm
 import io.qorche.core.Orchestrator
+import io.qorche.core.SnapshotCreator
 import io.qorche.core.TaskParseException
 import io.qorche.core.TaskStatus
 import io.qorche.core.TaskYamlParser
@@ -38,8 +40,13 @@ class RunCommand : CliktCommand(name = "run") {
     private val verbose by option("--verbose", "-v", help = "Show agent output").flag()
     private val skipPermissions by option("--skip-permissions", help = "Pass --dangerously-skip-permissions to Claude Code").flag()
     private val output by option("--output", "-o", help = "Output format: text or json").default("text")
+    private val hashAlgorithm by option("--hash", help = "Hash algorithm: crc32c (fast, default) or sha256 (cryptographic)").default("crc32c")
 
     override fun run() {
+        SnapshotCreator.hashAlgorithm = when (hashAlgorithm.lowercase()) {
+            "sha256", "sha-256" -> HashAlgorithm.SHA256
+            else -> HashAlgorithm.CRC32C
+        }
         val workDir = Path.of(System.getProperty("user.dir"))
         val orchestrator = Orchestrator(workDir)
         val extraArgs = if (skipPermissions) listOf("--dangerously-skip-permissions") else emptyList()

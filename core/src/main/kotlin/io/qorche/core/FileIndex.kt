@@ -32,7 +32,11 @@ class FileIndex {
      * Returns the cached hash if size and mtime match, otherwise recomputes and caches it.
      * Uses nanosecond precision where the filesystem supports it.
      */
-    fun getOrComputeHash(file: Path, relativePath: String): String {
+    fun getOrComputeHash(
+        file: Path,
+        relativePath: String,
+        algorithm: HashAlgorithm = HashAlgorithm.CRC32C
+    ): String {
         val size = file.fileSize()
         val fileTime = file.getLastModifiedTime()
         val mtimeMs = fileTime.toMillis()
@@ -45,7 +49,7 @@ class FileIndex {
             return cached.hash
         }
 
-        val hash = hashFile(file)
+        val hash = hashFile(file, algorithm)
         entries[relativePath] = FileIndexEntry(relativePath, size, mtimeMs, mtimeNanos, hash)
         return hash
     }

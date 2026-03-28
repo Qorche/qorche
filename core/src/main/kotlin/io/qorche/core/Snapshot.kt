@@ -10,8 +10,23 @@ import kotlinx.serialization.Serializable
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.util.zip.CRC32C
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.relativeTo
+
+/**
+ * Pluggable hash algorithm for file content hashing.
+ *
+ * [CRC32C] is the default: hardware-accelerated on modern x86/ARM CPUs,
+ * roughly 50x faster than SHA-256. Not cryptographic, but Qorche only
+ * needs change detection, not tamper resistance.
+ *
+ * [SHA256] is available when cryptographic guarantees are needed.
+ */
+enum class HashAlgorithm {
+    CRC32C,
+    SHA256
+}
 
 /** Immutable point-in-time record of file hashes for a directory tree. */
 @Serializable
@@ -52,6 +67,9 @@ data class SnapshotDiff(
 
 /** Factory for creating snapshots and computing diffs between them. */
 object SnapshotCreator {
+
+    /** The hash algorithm used for all snapshot operations. Default: CRC32C. */
+    var hashAlgorithm: HashAlgorithm = HashAlgorithm.CRC32C
 
     /** Default ignore prefixes — common VCS, IDE, build, and dependency directories. */
     val DEFAULT_IGNORE_PREFIXES = listOf(
@@ -203,13 +221,15 @@ object SnapshotCreator {
         files: List<Path>,
         fileIndex: FileIndex?
     ): Map<String, String> = coroutineScope {
+        val algo = hashAlgorithm
         val batchSize = (files.size / (Runtime.getRuntime().availableProcessors() * 2)).coerceAtLeast(50)
 
         files.chunked(batchSize).map { batch ->
             async(Dispatchers.IO) {
                 batch.map { file ->
                     val relativePath = file.relativeTo(directory).toString().replace("\\", "/")
-                    val hash = fileIndex?.getOrComputeHash(file, relativePath) ?: hashFile(file)
+                    val hash = fileIndex?.getOrComputeHash(file, relativePath, algo)
+                        ?: hashFile(file, algo)
                     relativePath to hash
                 }
             }
@@ -224,10 +244,32 @@ object SnapshotCreator {
 }
 
 /**
- * SHA-256 hash of file contents, streaming through MessageDigest.
+ * Hash file contents using the given algorithm, streaming through a buffer.
  * Strips `\r` bytes before hashing for cross-platform line-ending consistency.
  */
-fun hashFile(file: Path): String {
+fun hashFile(file: Path, algorithm: HashAlgorithm = HashAlgorithm.CRC32C): String = when (algorithm) {
+    HashAlgorithm.CRC32C -> hashFileCrc32c(file)
+    HashAlgorithm.SHA256 -> hashFileSha256(file)
+}
+
+private fun hashFileCrc32c(file: Path): String {
+    val crc = CRC32C()
+    val buffer = ByteArray(8192)
+    Files.newInputStream(file).use { input ->
+        while (true) {
+            val bytesRead = input.read(buffer)
+            if (bytesRead == -1) break
+            for (i in 0 until bytesRead) {
+                val b = buffer[i]
+                if (b == '\r'.code.toByte()) continue
+                crc.update(b.toInt())
+            }
+        }
+    }
+    return "%08x".format(crc.value)
+}
+
+private fun hashFileSha256(file: Path): String {
     val digest = MessageDigest.getInstance("SHA-256")
     val buffer = ByteArray(8192)
     Files.newInputStream(file).use { input ->
