@@ -1,0 +1,348 @@
+package io.qorche.core
+
+import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
+import kotlinx.serialization.Serializable
+import java.nio.file.Files
+import java.nio.file.Path
+import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.zip.CRC32C
+import kotlin.io.path.isRegularFile
+import kotlin.io.path.relativeTo
+
+/**
+ * Pluggable hash algorithm for file content hashing.
+ *
+ * [SHA1] is the default: same algorithm Git uses, 160-bit output (no collision
+ * risk for change detection), ~50% faster than SHA-256. Its cryptographic
+ * weakness (crafted collisions) is irrelevant for Qorche's use case.
+ *
+ * [CRC32C] is the fastest option: hardware-accelerated on modern x86/ARM CPUs.
+ * 32-bit output means theoretical collision risk at very large file counts,
+ * but negligible for per-path change detection.
+ *
+ * [SHA256] is available when cryptographic guarantees are needed.
+ */
+enum class HashAlgorithm {
+    CRC32C,
+    SHA1,
+    SHA256
+}
+
+/** Immutable point-in-time record of file hashes for a directory tree. */
+@Serializable
+data class Snapshot(
+    val id: String,
+    val timestamp: Instant,
+    val fileHashes: Map<String, String>,
+    val description: String,
+    val parentId: String? = null
+)
+
+/** Difference between two snapshots, categorised as added, modified, or deleted files. */
+@Serializable
+data class SnapshotDiff(
+    val added: Set<String>,
+    val modified: Set<String>,
+    val deleted: Set<String>,
+    val beforeId: String,
+    val afterId: String
+) {
+    /** Total number of changed files across all categories. */
+    val totalChanges: Int get() = added.size + modified.size + deleted.size
+
+    /** Returns a human-readable summary of the changes (e.g. "+2 added, ~1 modified"). */
+    fun summary(): String = buildString {
+        if (added.isNotEmpty()) append("+${added.size} added")
+        if (modified.isNotEmpty()) {
+            if (isNotEmpty()) append(", ")
+            append("~${modified.size} modified")
+        }
+        if (deleted.isNotEmpty()) {
+            if (isNotEmpty()) append(", ")
+            append("-${deleted.size} deleted")
+        }
+        if (isEmpty()) append("no changes")
+    }
+}
+
+/** Progress update during snapshot creation. */
+data class SnapshotProgress(
+    val phase: String,
+    val current: Int,
+    val total: Int
+)
+
+/** Suggestion from a preflight check when a large repo could benefit from a faster hash algorithm. */
+data class PreflightResult(
+    val fileCount: Int,
+    val threshold: Int,
+    val currentAlgorithm: HashAlgorithm,
+    val suggestedAlgorithm: HashAlgorithm
+) {
+    fun message(): String =
+        "$fileCount files in scope (threshold: $threshold). " +
+        "Consider --hash ${suggestedAlgorithm.name.lowercase()} for faster snapshots, " +
+        "or scope tasks with 'files:' in your YAML to reduce snapshot overhead."
+}
+
+/** Factory for creating snapshots and computing diffs between them. */
+object SnapshotCreator {
+
+    /** The hash algorithm used for all snapshot operations. Default: CRC32C. */
+    var hashAlgorithm: HashAlgorithm = HashAlgorithm.SHA1
+
+    /** Default ignore prefixes — common VCS, IDE, build, and dependency directories. */
+    val DEFAULT_IGNORE_PREFIXES = listOf(
+        // VCS
+        ".git/", ".svn/", ".hg/",
+        // Build outputs
+        "build/", "dist/", "target/", "out/",
+        // JVM / Gradle / Kotlin
+        ".gradle/", ".kotlin/",
+        // JavaScript / Node
+        "node_modules/", ".next/", ".nuxt/", ".turbo/",
+        // Python
+        ".venv/", "venv/", "__pycache__/", ".mypy_cache/", ".ruff_cache/",
+        // IDE
+        ".idea/", ".vscode/", ".vs/", ".fleet/",
+        // Qorche
+        ".qorche/",
+        // OS artifacts
+        ".DS_Store",
+        "Thumbs.db"
+    )
+
+    private var ignorePrefixes: List<String> = DEFAULT_IGNORE_PREFIXES
+
+    /**
+     * Load ignore patterns from a `.qorignore` file in the given directory.
+     *
+     * The file uses a simple line-based format:
+     * - Each line is a path prefix to ignore (e.g. `node_modules/`, `vendor/`)
+     * - Lines starting with `#` are comments
+     * - Blank lines are skipped
+     * - If the file starts with `!reset`, default patterns are cleared and only
+     *   the file's patterns are used. Otherwise patterns are added to defaults.
+     */
+    fun loadIgnoreFile(directory: Path) {
+        val ignoreFile = directory.resolve(".qorignore")
+        if (!Files.exists(ignoreFile)) {
+            ignorePrefixes = DEFAULT_IGNORE_PREFIXES
+            return
+        }
+
+        val lines = Files.readAllLines(ignoreFile)
+            .map { it.trim() }
+            .filter { it.isNotBlank() && !it.startsWith("#") }
+
+        val resetDefaults = lines.firstOrNull() == "!reset"
+        val patterns = if (resetDefaults) lines.drop(1) else lines
+
+        ignorePrefixes = if (resetDefaults) {
+            patterns
+        } else {
+            (DEFAULT_IGNORE_PREFIXES + patterns).distinct()
+        }
+    }
+
+    /** Reset ignore patterns to defaults (useful for testing). */
+    fun resetIgnorePatterns() {
+        ignorePrefixes = DEFAULT_IGNORE_PREFIXES
+    }
+
+    /** Default threshold file count above which a faster hash algorithm is recommended. */
+    const val DEFAULT_LARGE_REPO_THRESHOLD = 5_000
+
+    /**
+     * Count the number of trackable files in the directory (respects ignore patterns).
+     * Useful for preflight checks before committing to a full snapshot.
+     */
+    fun countFiles(directory: Path): Int = collectFiles(directory).size
+
+    /**
+     * Run a preflight check and return a suggestion if the repo is large enough
+     * that switching hash algorithms would meaningfully reduce overhead.
+     *
+     * @param threshold File count at which the suggestion triggers. Default: 5,000.
+     * Returns null if no suggestion is warranted (small repo or already using CRC32C).
+     */
+    fun preflightCheck(directory: Path, threshold: Int = DEFAULT_LARGE_REPO_THRESHOLD): PreflightResult? {
+        val fileCount = countFiles(directory)
+        if (fileCount < threshold) return null
+        if (hashAlgorithm == HashAlgorithm.CRC32C) return null
+
+        return PreflightResult(
+            fileCount = fileCount,
+            threshold = threshold,
+            currentAlgorithm = hashAlgorithm,
+            suggestedAlgorithm = HashAlgorithm.CRC32C
+        )
+    }
+
+    /**
+     * Create a full-repo snapshot — walks the entire directory tree.
+     */
+    fun create(
+        directory: Path,
+        description: String,
+        parentId: String? = null,
+        fileIndex: FileIndex? = null,
+        onProgress: ((SnapshotProgress) -> Unit)? = null
+    ): Snapshot {
+        val files = collectFiles(directory)
+        onProgress?.invoke(SnapshotProgress("scanning", files.size, files.size))
+        val hashes = hashFilesParallel(directory, files, fileIndex, onProgress)
+
+        return Snapshot(
+            id = generateId(),
+            timestamp = Clock.System.now(),
+            fileHashes = hashes,
+            description = description,
+            parentId = parentId
+        )
+    }
+
+    /**
+     * Create a scoped snapshot — only hashes files matching the given paths/globs.
+     * Paths can be files or directories (all files under that directory are included).
+     */
+    fun createScoped(
+        directory: Path,
+        scopePaths: List<String>,
+        description: String,
+        parentId: String? = null,
+        fileIndex: FileIndex? = null,
+        onProgress: ((SnapshotProgress) -> Unit)? = null
+    ): Snapshot {
+        val files = mutableListOf<Path>()
+
+        for (scopePath in scopePaths) {
+            val resolved = directory.resolve(scopePath)
+            if (Files.isDirectory(resolved)) {
+                Files.walk(resolved).use { stream ->
+                    stream
+                        .filter { it.isRegularFile() }
+                        .filter { !isIgnored(directory.relativize(it).toString().replace("\\", "/")) }
+                        .forEach { files.add(it) }
+                }
+            } else if (Files.isRegularFile(resolved)) {
+                files.add(resolved)
+            }
+        }
+
+        onProgress?.invoke(SnapshotProgress("scanning", files.size, files.size))
+        val hashes = hashFilesParallel(directory, files, fileIndex, onProgress)
+
+        return Snapshot(
+            id = generateId(),
+            timestamp = Clock.System.now(),
+            fileHashes = hashes,
+            description = description,
+            parentId = parentId
+        )
+    }
+
+    /** Computes the set of added, modified, and deleted files between two snapshots. */
+    fun diff(before: Snapshot, after: Snapshot): SnapshotDiff {
+        val added = after.fileHashes.keys - before.fileHashes.keys
+        val deleted = before.fileHashes.keys - after.fileHashes.keys
+        val common = before.fileHashes.keys.intersect(after.fileHashes.keys)
+        val modified = common.filter { before.fileHashes[it] != after.fileHashes[it] }.toSet()
+
+        return SnapshotDiff(
+            added = added,
+            modified = modified,
+            deleted = deleted,
+            beforeId = before.id,
+            afterId = after.id
+        )
+    }
+
+    private fun collectFiles(directory: Path): List<Path> {
+        val files = mutableListOf<Path>()
+        Files.walk(directory).use { stream ->
+            stream
+                .filter { it.isRegularFile() }
+                .filter { !isIgnored(directory.relativize(it).toString().replace("\\", "/")) }
+                .forEach { files.add(it) }
+        }
+        return files
+    }
+
+    private fun hashFilesParallel(
+        directory: Path,
+        files: List<Path>,
+        fileIndex: FileIndex?,
+        onProgress: ((SnapshotProgress) -> Unit)? = null
+    ): Map<String, String> {
+        val algo = hashAlgorithm
+        val total = files.size
+        val processed = AtomicInteger(0)
+
+        return files.parallelStream().map { file ->
+            val relativePath = file.relativeTo(directory).toString().replace("\\", "/")
+            val hash = fileIndex?.getOrComputeHash(file, relativePath, algo)
+                ?: hashFile(file, algo)
+            val count = processed.incrementAndGet()
+            if (count % 500 == 0 || count == total) {
+                onProgress?.invoke(SnapshotProgress("hashing", count, total))
+            }
+            relativePath to hash
+        }.toList().toMap()
+    }
+
+    internal fun isIgnored(relativePath: String): Boolean =
+        ignorePrefixes.any { prefix ->
+            if (prefix.endsWith("/")) relativePath.startsWith(prefix)
+            else relativePath == prefix || relativePath.startsWith("$prefix/")
+        }
+}
+
+/**
+ * Hash file contents using the given algorithm, streaming through a buffer.
+ * Strips `\r` bytes before hashing for cross-platform line-ending consistency.
+ */
+fun hashFile(file: Path, algorithm: HashAlgorithm = HashAlgorithm.SHA1): String = when (algorithm) {
+    HashAlgorithm.CRC32C -> hashFileCrc32c(file)
+    HashAlgorithm.SHA1 -> hashFileMessageDigest(file, "SHA-1")
+    HashAlgorithm.SHA256 -> hashFileMessageDigest(file, "SHA-256")
+}
+
+private fun hashFileCrc32c(file: Path): String {
+    val crc = CRC32C()
+    val buffer = ByteArray(8192)
+    Files.newInputStream(file).use { input ->
+        while (true) {
+            val bytesRead = input.read(buffer)
+            if (bytesRead == -1) break
+            for (i in 0 until bytesRead) {
+                val b = buffer[i]
+                if (b == '\r'.code.toByte()) continue
+                crc.update(b.toInt())
+            }
+        }
+    }
+    return "%08x".format(crc.value)
+}
+
+private fun hashFileMessageDigest(file: Path, algorithm: String): String {
+    val digest = MessageDigest.getInstance(algorithm)
+    val buffer = ByteArray(8192)
+    Files.newInputStream(file).use { input ->
+        while (true) {
+            val bytesRead = input.read(buffer)
+            if (bytesRead == -1) break
+            for (i in 0 until bytesRead) {
+                val b = buffer[i]
+                if (b == '\r'.code.toByte()) continue
+                digest.update(b)
+            }
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
+private fun generateId(): String =
+    java.util.UUID.randomUUID().toString()
