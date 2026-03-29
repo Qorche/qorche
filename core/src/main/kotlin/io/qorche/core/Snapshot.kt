@@ -1,9 +1,5 @@
 package io.qorche.core
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
@@ -188,7 +184,7 @@ object SnapshotCreator {
     /**
      * Create a full-repo snapshot — walks the entire directory tree.
      */
-    suspend fun create(
+    fun create(
         directory: Path,
         description: String,
         parentId: String? = null,
@@ -212,7 +208,7 @@ object SnapshotCreator {
      * Create a scoped snapshot — only hashes files matching the given paths/globs.
      * Paths can be files or directories (all files under that directory are included).
      */
-    suspend fun createScoped(
+    fun createScoped(
         directory: Path,
         scopePaths: List<String>,
         description: String,
@@ -275,30 +271,26 @@ object SnapshotCreator {
         return files
     }
 
-    private suspend fun hashFilesParallel(
+    private fun hashFilesParallel(
         directory: Path,
         files: List<Path>,
         fileIndex: FileIndex?,
         onProgress: ((SnapshotProgress) -> Unit)? = null
-    ): Map<String, String> = coroutineScope {
+    ): Map<String, String> {
         val algo = hashAlgorithm
         val total = files.size
-        val batchSize = (total / (Runtime.getRuntime().availableProcessors() * 2)).coerceAtLeast(50)
         val processed = AtomicInteger(0)
 
-        files.chunked(batchSize).map { batch ->
-            async(Dispatchers.IO) {
-                val results = batch.map { file ->
-                    val relativePath = file.relativeTo(directory).toString().replace("\\", "/")
-                    val hash = fileIndex?.getOrComputeHash(file, relativePath, algo)
-                        ?: hashFile(file, algo)
-                    relativePath to hash
-                }
-                val count = processed.addAndGet(batch.size)
+        return files.parallelStream().map { file ->
+            val relativePath = file.relativeTo(directory).toString().replace("\\", "/")
+            val hash = fileIndex?.getOrComputeHash(file, relativePath, algo)
+                ?: hashFile(file, algo)
+            val count = processed.incrementAndGet()
+            if (count % 500 == 0 || count == total) {
                 onProgress?.invoke(SnapshotProgress("hashing", count, total))
-                results
             }
-        }.awaitAll().flatten().toMap()
+            relativePath to hash
+        }.toList().toMap()
     }
 
     internal fun isIgnored(relativePath: String): Boolean =
