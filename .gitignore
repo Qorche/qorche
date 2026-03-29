@@ -95,5 +95,8 @@ gradle-app.setting
 hs_err_pid*
 replay_pid*
 
+# Internal docs
+docs/
+
 # AI
 .claude/

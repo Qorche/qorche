@@ -184,6 +184,20 @@ Full benchmark suite: `./gradlew :agent:benchmark`
 
 **Crash-safe.** If a worker crashes mid-execution, the after-snapshot still captures the dirty filesystem state. Partial writes are visible to conflict detection.
 
+## Use cases
+
+**Multi-agent coding** — Run multiple LLM agents (Aider, Claude Code, OpenHands) on the same repo simultaneously. Qorche detects when two agents modify the same file and retries the loser against the winner's changes. No more discovering conflicts at merge time.
+
+**Monorepo parallel tasks** — Tools like Nx and Gradle `--parallel` assume tasks are isolated by package, but shared config files (`tsconfig.base.json`, `package.json`) break that assumption. Qorche adds per-file conflict detection to per-package isolation.
+
+**Code generation** — Run protobuf, OpenAPI, and GraphQL generators in parallel. When generators write to overlapping output directories, qorche detects the conflict instead of silently producing a corrupt result.
+
+**Database migrations** — Two developers generate migrations concurrently and both get number `0042`. Qorche detects the collision immediately. The retry re-runs the loser, which now sees `0042` exists and generates `0043`.
+
+**Parallel formatting/linting** — Run `prettier --write` and `eslint --fix` across a monorepo in parallel. Qorche detects when both modify the same file and retries — formatters are idempotent, so retry always produces the correct result.
+
+**IaC code generation** — Concurrent `cdk synth` or Terragrunt runs generate files into shared output directories. Qorche wraps the generation step with conflict detection.
+
 ## Project structure
 
 ```
@@ -191,8 +205,7 @@ qorche/
 ├── core/       # Orchestrator, snapshots, MVCC, DAG, WAL (zero domain-specific deps)
 ├── agent/      # Runner implementations (MockAgentRunner, ShellRunner, ClaudeCodeAdapter)
 ├── cli/        # CLI entry point via Clikt (run, plan, history, diff, status, logs, clean)
-├── native/     # Shared library (libqorche) via GraalVM --shared, C FFI entry points
-└── docs/       # Phase plan and architecture docs
+└── native/     # Shared library (libqorche) via GraalVM --shared, C FFI entry points
 ```
 
 Module boundaries are strict: `core/` depends on nothing, `agent/` depends on `core/`, `cli/` depends on both.
