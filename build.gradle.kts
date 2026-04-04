@@ -3,6 +3,7 @@ plugins {
     kotlin("plugin.serialization") apply false
     id("org.graalvm.buildtools.native") version "0.10.6" apply false
     id("io.gitlab.arturbosch.detekt") version "1.23.7"
+    id("org.jetbrains.dokka") version "2.2.0"
 }
 
 val detektReportMergeSarif by tasks.registering(io.gitlab.arturbosch.detekt.report.ReportMergeTask::class) {
@@ -46,10 +47,25 @@ allprojects {
     }
 }
 
+dokka {
+    moduleName.set("Qorche")
+    dokkaPublications.html {
+        outputDirectory.set(layout.buildDirectory.dir("docs/html"))
+    }
+}
+
+dependencies {
+    dokka(project(":core"))
+    dokka(project(":agent"))
+    dokka(project(":cli"))
+    dokka(project(":native"))
+}
+
 subprojects {
     apply(plugin = "org.jetbrains.kotlin.jvm")
     apply(plugin = "org.jetbrains.kotlin.plugin.serialization")
     apply(plugin = "io.gitlab.arturbosch.detekt")
+    apply(plugin = "org.jetbrains.dokka")
 
     configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
         jvmToolchain(21)

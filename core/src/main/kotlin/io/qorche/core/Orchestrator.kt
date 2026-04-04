@@ -755,16 +755,20 @@ class Orchestrator(private val workDir: Path) {
         }
     }
 
+    /** Returns all stored snapshots, ordered by timestamp (most recent first). */
     fun history(): List<Snapshot> = snapshotStore.list()
 
+    /** Loads a snapshot by its full or prefix ID, or null if not found. */
     fun loadSnapshot(id: String): Snapshot? = snapshotStore.load(id)
 
+    /** Computes the file-level diff between two snapshots, or null if either is not found. */
     fun diffSnapshots(id1: String, id2: String): SnapshotDiff? {
         val snap1 = snapshotStore.load(id1) ?: return null
         val snap2 = snapshotStore.load(id2) ?: return null
         return SnapshotCreator.diff(snap1, snap2)
     }
 
+    /** Reads all WAL entries from the append-only log. */
     fun walEntries(): List<WALEntry> = walWriter.readAll()
 
     /**

@@ -27,6 +27,7 @@ object TaskYamlParser {
         )
     )
 
+    /** Parses a YAML string into a [TaskProject], validating runner references. */
     fun parse(content: String): TaskProject {
         require(content.isNotBlank()) { "Task definition file is empty" }
         val project = try {
@@ -52,6 +53,7 @@ object TaskYamlParser {
         }
     }
 
+    /** Reads and parses a YAML task file from disk. */
     fun parseFile(path: Path): TaskProject {
         require(path.toFile().exists()) { "Task file does not exist: $path" }
         return parse(path.readText())
@@ -66,6 +68,7 @@ object TaskYamlParser {
         return TaskGraph(project.tasks)
     }
 
+    /** Reads a YAML file and builds a validated [TaskGraph] with cycle detection. */
     fun parseFileToGraph(path: Path): Pair<TaskProject, TaskGraph> {
         val project = parseFile(path)
         require(project.tasks.isNotEmpty()) { "Task definition contains no tasks" }
@@ -73,5 +76,6 @@ object TaskYamlParser {
     }
 }
 
+/** Thrown when a YAML task file cannot be parsed or contains invalid definitions. */
 class TaskParseException(message: String, cause: Throwable? = null) :
     RuntimeException(message, cause)
