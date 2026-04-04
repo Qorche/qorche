@@ -10,6 +10,7 @@ import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.int
 import io.qorche.agent.ClaudeCodeAdapter
+import io.qorche.agent.RunnerRegistry
 import io.qorche.core.CycleDetectedException
 import io.qorche.core.HashAlgorithm
 import io.qorche.core.Orchestrator
@@ -168,9 +169,19 @@ class RunCommand : CliktCommand(name = "run") {
             exitProcess(2)
         }
 
+        val runners = try {
+            RunnerRegistry.build(project.runners)
+        } catch (e: IllegalArgumentException) {
+            echo("Error: ${e.message}", err = true)
+            exitProcess(2)
+        }
+
         if (output == "text") {
             echo("Project: ${project.project}")
             echo("Tasks: ${project.tasks.size}")
+            if (runners.isNotEmpty()) {
+                echo("Runners: ${runners.keys.joinToString(", ")}")
+            }
             echo("")
         }
 
@@ -179,6 +190,7 @@ class RunCommand : CliktCommand(name = "run") {
                 project = project.project,
                 graph = graph,
                 runner = runner,
+                runners = runners,
                 onTaskStart = { def ->
                     if (output == "text") echo("${Terminal.cyan("[${def.id}]")} Starting: ${def.instruction}")
                 },
