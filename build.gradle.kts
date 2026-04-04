@@ -2,7 +2,15 @@ plugins {
     kotlin("jvm") version "2.3.20" apply false
     kotlin("plugin.serialization") version "2.3.20" apply false
     id("org.graalvm.buildtools.native") version "0.10.6" apply false
-    id("io.gitlab.arturbosch.detekt") version "1.23.7" apply false
+    id("io.gitlab.arturbosch.detekt") version "1.23.7"
+}
+
+val detektReportMergeSarif by tasks.registering(io.gitlab.arturbosch.detekt.report.ReportMergeTask::class) {
+    output.set(layout.buildDirectory.file("reports/detekt/merged.sarif"))
+}
+
+val detektReportMergeXml by tasks.registering(io.gitlab.arturbosch.detekt.report.ReportMergeTask::class) {
+    output.set(layout.buildDirectory.file("reports/detekt/merged.xml"))
 }
 
 fun gitVersion(): String = try {
@@ -52,6 +60,23 @@ subprojects {
         buildUponDefaultConfig = true
         parallel = true
         baseline = file("detekt-baseline.xml")
+    }
+
+    tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+        reports {
+            sarif.required.set(true)
+            xml.required.set(true)
+            html.required.set(true)
+        }
+        finalizedBy(detektReportMergeSarif, detektReportMergeXml)
+    }
+
+    detektReportMergeSarif.configure {
+        input.from(tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().map { it.sarifReportFile })
+    }
+
+    detektReportMergeXml.configure {
+        input.from(tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().map { it.xmlReportFile })
     }
 
     dependencies {
