@@ -2,6 +2,7 @@ plugins {
     kotlin("jvm") version "2.3.20" apply false
     kotlin("plugin.serialization") version "2.3.20" apply false
     id("org.graalvm.buildtools.native") version "0.10.6" apply false
+    id("io.gitlab.arturbosch.detekt") version "1.23.7" apply false
 }
 
 fun gitVersion(): String = try {
@@ -40,9 +41,17 @@ allprojects {
 subprojects {
     apply(plugin = "org.jetbrains.kotlin.jvm")
     apply(plugin = "org.jetbrains.kotlin.plugin.serialization")
+    apply(plugin = "io.gitlab.arturbosch.detekt")
 
     configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
         jvmToolchain(21)
+    }
+
+    configure<io.gitlab.arturbosch.detekt.extensions.DetektExtension> {
+        config.setFrom(rootProject.files("config/detekt/detekt.yml"))
+        buildUponDefaultConfig = true
+        parallel = true
+        baseline = file("detekt-baseline.xml")
     }
 
     dependencies {
