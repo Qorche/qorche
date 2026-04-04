@@ -20,6 +20,7 @@ import io.qorche.core.SnapshotCreator
 import io.qorche.core.TaskParseException
 import io.qorche.core.TaskStatus
 import io.qorche.core.TaskYamlParser
+import io.qorche.core.WALEntry
 import kotlinx.coroutines.runBlocking
 import java.nio.file.Path
 import kotlin.system.exitProcess
@@ -46,6 +47,7 @@ class QorcheCommand : CliktCommand(name = "qorche") {
         completionOption()
         subcommands(
             InitCommand(), RunCommand(), PlanCommand(), ValidateCommand(),
+            VerifyCommand(), ReplayCommand(),
             StatusCommand(), LogsCommand(), HistoryCommand(), DiffCommand(),
             CleanCommand(), SchemaCommand(), VersionCommand()
         )
@@ -201,6 +203,7 @@ class RunCommand : CliktCommand(name = "run") {
                 graph = graph,
                 runner = defaultRunner,
                 runners = runners,
+                verifyConfig = project.verify,
                 onTaskStart = { def ->
                     if (output == "text") echo("${Terminal.cyan("[${def.id}]")} Starting: ${def.instruction}")
                 },
@@ -227,6 +230,15 @@ class RunCommand : CliktCommand(name = "run") {
                         echo("${Terminal.red("[CONFLICT]")} ${conflict.taskA} <-> ${conflict.taskB}: ${conflict.conflictingFiles.joinToString(", ")}")
                     }
                 },
+                onVerify = { verifyResult ->
+                    if (output == "text") {
+                        if (verifyResult.success) {
+                            echo("${Terminal.green("[VERIFY]")} Group ${verifyResult.groupIndex} passed ${Terminal.dim("(${formatElapsed(verifyResult.elapsedMs)})")}")
+                        } else {
+                            echo("${Terminal.red("[VERIFY]")} Group ${verifyResult.groupIndex} FAILED (exit ${verifyResult.exitCode}) ${Terminal.dim("(${formatElapsed(verifyResult.elapsedMs)})")}")
+                        }
+                    }
+                },
                 onOutput = { line ->
                     if (verbose) echo("[agent] $line", err = output == "json")
                 }
@@ -240,6 +252,11 @@ class RunCommand : CliktCommand(name = "run") {
                 echo("")
                 if (result.hasConflicts) {
                     echo("Conflicts: ${result.conflicts.size} detected")
+                }
+                if (result.verifyResults.isNotEmpty()) {
+                    val passed = result.verifyResults.count { it.success }
+                    val failed = result.verifyResults.size - passed
+                    echo("Verify: $passed passed, $failed failed")
                 }
                 echo("Results: ${result.completedTasks} completed, ${result.failedTasks} failed, ${result.skippedTasks} skipped")
                 echo("Logs: .qorche/logs/")
@@ -330,6 +347,208 @@ class PlanCommand : CliktCommand(name = "plan") {
 
         echo("")
         echo("Use 'qorche run ${file}' to execute.")
+    }
+}
+
+class VerifyCommand : CliktCommand(name = "verify") {
+    override fun help(context: com.github.ajalt.clikt.core.Context) =
+        "Run the verification step from a YAML task file against the current working directory"
+
+    private val file by argument(help = "Path to a YAML task file with a 'verify' section")
+    private val verbose by option("--verbose", "-v", help = "Show verification output").flag()
+
+    override fun run() {
+        val workDir = Path.of(System.getProperty("user.dir"))
+        val filePath = workDir.resolve(file)
+
+        val project = try {
+            TaskYamlParser.parseFile(filePath)
+        } catch (e: TaskParseException) {
+            echo("Error: ${e.message}", err = true)
+            exitProcess(ExitCode.CONFIG_ERROR.code)
+        }
+
+        val verifyConfig = project.verify
+        if (verifyConfig == null) {
+            echo("No 'verify' section found in $file", err = true)
+            exitProcess(ExitCode.CONFIG_ERROR.code)
+        }
+
+        echo("Running: ${verifyConfig.command}")
+        echo("")
+
+        val startTime = System.currentTimeMillis()
+        val isWindows = System.getProperty("os.name").lowercase().contains("win")
+        val command = if (isWindows) {
+            listOf("cmd", "/c", verifyConfig.command)
+        } else {
+            listOf("sh", "-c", verifyConfig.command)
+        }
+
+        try {
+            val process = ProcessBuilder(command)
+                .directory(workDir.toFile())
+                .redirectErrorStream(true)
+                .start()
+
+            process.inputStream.bufferedReader().use { reader ->
+                reader.lineSequence().forEach { line ->
+                    if (verbose) echo(line)
+                }
+            }
+
+            val completed = process.waitFor(
+                verifyConfig.timeoutSeconds,
+                java.util.concurrent.TimeUnit.SECONDS
+            )
+            val elapsed = System.currentTimeMillis() - startTime
+
+            if (!completed) {
+                process.destroyForcibly()
+                echo("${Terminal.red("TIMEOUT")} after ${verifyConfig.timeoutSeconds}s")
+                exitProcess(ExitCode.TASK_FAILURE.code)
+            }
+
+            val exitCode = process.exitValue()
+            if (exitCode == 0) {
+                echo("${Terminal.green("PASSED")} ${Terminal.dim("(${formatElapsed(elapsed)})")}")
+            } else {
+                echo("${Terminal.red("FAILED")} (exit $exitCode) ${Terminal.dim("(${formatElapsed(elapsed)})")}")
+                exitProcess(ExitCode.TASK_FAILURE.code)
+            }
+        } catch (e: Exception) {
+            echo("Error: ${e.message}", err = true)
+            exitProcess(ExitCode.TASK_FAILURE.code)
+        }
+    }
+}
+
+class ReplayCommand : CliktCommand(name = "replay") {
+    override fun help(context: com.github.ajalt.clikt.core.Context) =
+        "Replay WAL history and verify snapshot consistency"
+
+    private val verbose by option("--verbose", "-v", help = "Show detailed entry information").flag()
+    private val checkConsistency by option("--check", help = "Verify current filesystem matches the latest snapshot").flag()
+
+    override fun run() {
+        val workDir = Path.of(System.getProperty("user.dir"))
+        val orchestrator = Orchestrator(workDir)
+
+        val entries = orchestrator.walEntries()
+        if (entries.isEmpty()) {
+            echo("No WAL entries found. Run tasks first.")
+            return
+        }
+
+        echo("WAL replay: ${entries.size} entries")
+        echo("")
+
+        // Group entries by task for a coherent narrative
+        var taskCount = 0
+        var completedCount = 0
+        var failedCount = 0
+        var retryCount = 0
+        var conflictCount = 0
+        var verifyCount = 0
+
+        for (entry in entries) {
+            when (entry) {
+                is WALEntry.TaskStarted -> {
+                    taskCount++
+                    echo("${Terminal.cyan("[${entry.taskId}]")} Started at ${entry.timestamp}")
+                    if (verbose) {
+                        echo("  Instruction: ${entry.instruction}")
+                        echo("  Snapshot: ${entry.snapshotId.take(8)}")
+                    }
+                }
+                is WALEntry.TaskCompleted -> {
+                    completedCount++
+                    echo("${Terminal.green("[${entry.taskId}]")} Completed (exit ${entry.exitCode})")
+                    if (verbose) {
+                        echo("  Snapshot: ${entry.snapshotId.take(8)}")
+                        if (entry.filesModified.isNotEmpty()) {
+                            echo("  Files: ${entry.filesModified.joinToString(", ")}")
+                        }
+                    }
+                }
+                is WALEntry.TaskFailed -> {
+                    failedCount++
+                    echo("${Terminal.red("[${entry.taskId}]")} Failed: ${entry.error}")
+                }
+                is WALEntry.ConflictDetected -> {
+                    conflictCount++
+                    echo("${Terminal.red("[CONFLICT]")} ${entry.taskId} <-> ${entry.conflictingTaskId}")
+                    if (verbose) {
+                        echo("  Files: ${entry.conflictingFiles.joinToString(", ")}")
+                        echo("  Base: ${entry.baseSnapshotId.take(8)}")
+                    }
+                }
+                is WALEntry.TaskRetryScheduled -> {
+                    retryCount++
+                    echo("${Terminal.cyan("[${entry.taskId}]")} Retry #${entry.attempt} (conflict with ${entry.conflictWith})")
+                    if (verbose) {
+                        echo("  Files: ${entry.conflictingFiles.joinToString(", ")}")
+                    }
+                }
+                is WALEntry.TaskRetried -> {
+                    echo("${Terminal.cyan("[${entry.taskId}]")} Retried #${entry.attempt}")
+                    if (verbose) {
+                        echo("  Snapshot: ${entry.snapshotId.take(8)}")
+                    }
+                }
+                is WALEntry.ScopeViolation -> {
+                    echo("${Terminal.red("[SCOPE]")} Undeclared: ${entry.undeclaredFiles.joinToString(", ")}")
+                    if (verbose) {
+                        echo("  Suspects: ${entry.suspectTaskIds.joinToString(", ")}")
+                    }
+                }
+                is WALEntry.VerifyCompleted -> {
+                    verifyCount++
+                    if (entry.success) {
+                        echo("${Terminal.green("[VERIFY]")} Group ${entry.groupIndex} passed")
+                    } else {
+                        echo("${Terminal.red("[VERIFY]")} Group ${entry.groupIndex} failed (exit ${entry.exitCode})")
+                    }
+                    if (verbose) {
+                        echo("  Command: ${entry.command}")
+                    }
+                }
+            }
+        }
+
+        echo("")
+        echo("Summary: $taskCount started, $completedCount completed, $failedCount failed")
+        if (retryCount > 0) echo("  Retries: $retryCount")
+        if (conflictCount > 0) echo("  Conflicts: $conflictCount")
+        if (verifyCount > 0) echo("  Verifications: $verifyCount")
+
+        // Snapshot consistency check
+        if (checkConsistency) {
+            echo("")
+            echo("Checking snapshot consistency...")
+
+            val snapshots = orchestrator.history()
+            if (snapshots.isEmpty()) {
+                echo("No snapshots found for consistency check.")
+                return
+            }
+
+            val latest = snapshots.first() // Most recent
+            val currentSnapshot = io.qorche.core.SnapshotCreator.create(
+                workDir, "consistency-check"
+            )
+            val diff = io.qorche.core.SnapshotCreator.diff(latest, currentSnapshot)
+
+            if (diff.totalChanges == 0) {
+                echo("${Terminal.green("CONSISTENT")} Current filesystem matches latest snapshot (${latest.id.take(8)})")
+            } else {
+                echo("${Terminal.red("DIVERGED")} ${diff.summary()} since snapshot ${latest.id.take(8)}")
+                for (f in diff.added.sorted()) echo("  + $f")
+                for (f in diff.modified.sorted()) echo("  ~ $f")
+                for (f in diff.deleted.sorted()) echo("  - $f")
+                exitProcess(ExitCode.TASK_FAILURE.code)
+            }
+        }
     }
 }
 
