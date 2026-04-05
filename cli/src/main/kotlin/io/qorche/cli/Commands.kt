@@ -9,6 +9,7 @@ import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.int
+import com.github.ajalt.clikt.core.ProgramResult
 import io.qorche.agent.ClaudeCodeAdapter
 import io.qorche.agent.RunnerRegistry
 import io.qorche.agent.ShellRunner
@@ -23,7 +24,6 @@ import io.qorche.core.TaskYamlParser
 import io.qorche.core.WALEntry
 import kotlinx.coroutines.runBlocking
 import java.nio.file.Path
-import kotlin.system.exitProcess
 
 internal fun formatElapsed(ms: Long): String = when {
     ms >= 1000 -> "%.1fs".format(ms / 1000.0)
@@ -120,7 +120,7 @@ class RunCommand : CliktCommand(name = "run") {
 
             if (taskResult.isFailure) {
                 echo("Error: ${taskResult.exceptionOrNull()?.message}", err = true)
-                exitProcess(ExitCode.TASK_FAILURE.code)
+                throw ProgramResult(ExitCode.TASK_FAILURE.code)
             }
 
             val result = taskResult.getOrThrow()
@@ -153,7 +153,7 @@ class RunCommand : CliktCommand(name = "run") {
                 echo("Completed (exit ${result.agentResult.exitCode}) in ${elapsed}ms")
             }
 
-            if (result.agentResult.exitCode != 0) exitProcess(ExitCode.TASK_FAILURE.code)
+            if (result.agentResult.exitCode != 0) throw ProgramResult(ExitCode.TASK_FAILURE.code)
         }
     }
 
@@ -167,13 +167,13 @@ class RunCommand : CliktCommand(name = "run") {
             TaskYamlParser.parseFileToGraph(filePath)
         } catch (e: TaskParseException) {
             echo("Error: ${e.message}", err = true)
-            exitProcess(ExitCode.CONFIG_ERROR.code)
+            throw ProgramResult(ExitCode.CONFIG_ERROR.code)
         } catch (e: CycleDetectedException) {
             echo("Error: ${e.message}", err = true)
-            exitProcess(ExitCode.CONFIG_ERROR.code)
+            throw ProgramResult(ExitCode.CONFIG_ERROR.code)
         } catch (e: IllegalArgumentException) {
             echo("Error: ${e.message}", err = true)
-            exitProcess(ExitCode.CONFIG_ERROR.code)
+            throw ProgramResult(ExitCode.CONFIG_ERROR.code)
         }
 
         val runners = buildRunnerRegistry(project.runners)
@@ -182,7 +182,7 @@ class RunCommand : CliktCommand(name = "run") {
             runners[project.defaultRunner]
                 ?: run {
                     echo("Error: default_runner '${project.defaultRunner}' not found in runners", err = true)
-                    exitProcess(ExitCode.CONFIG_ERROR.code)
+                    throw ProgramResult(ExitCode.CONFIG_ERROR.code)
                 }
         } else {
             ShellRunner(allowedCommands = setOf("sh", "bash", "cmd", "powershell"))
@@ -265,9 +265,9 @@ class RunCommand : CliktCommand(name = "run") {
 
             if (!result.success) {
                 if (result.hasConflicts) {
-                    exitProcess(ExitCode.CONFLICT.code)
+                    throw ProgramResult(ExitCode.CONFLICT.code)
                 } else {
-                    exitProcess(ExitCode.TASK_FAILURE.code)
+                    throw ProgramResult(ExitCode.TASK_FAILURE.code)
                 }
             }
         }
@@ -279,7 +279,7 @@ class RunCommand : CliktCommand(name = "run") {
         RunnerRegistry.build(configs)
     } catch (e: IllegalArgumentException) {
         echo("Error: ${e.message}", err = true)
-        exitProcess(ExitCode.CONFIG_ERROR.code)
+        throw ProgramResult(ExitCode.CONFIG_ERROR.code)
     }
 }
 
@@ -297,13 +297,13 @@ class PlanCommand : CliktCommand(name = "plan") {
             TaskYamlParser.parseFileToGraph(filePath)
         } catch (e: TaskParseException) {
             echo("Error: ${e.message}", err = true)
-            exitProcess(ExitCode.CONFIG_ERROR.code)
+            throw ProgramResult(ExitCode.CONFIG_ERROR.code)
         } catch (e: CycleDetectedException) {
             echo("Error: ${e.message}", err = true)
-            exitProcess(ExitCode.CONFIG_ERROR.code)
+            throw ProgramResult(ExitCode.CONFIG_ERROR.code)
         } catch (e: IllegalArgumentException) {
             echo("Error: ${e.message}", err = true)
-            exitProcess(ExitCode.CONFIG_ERROR.code)
+            throw ProgramResult(ExitCode.CONFIG_ERROR.code)
         }
 
         if (output == "json") {
@@ -365,13 +365,13 @@ class VerifyCommand : CliktCommand(name = "verify") {
             TaskYamlParser.parseFile(filePath)
         } catch (e: TaskParseException) {
             echo("Error: ${e.message}", err = true)
-            exitProcess(ExitCode.CONFIG_ERROR.code)
+            throw ProgramResult(ExitCode.CONFIG_ERROR.code)
         }
 
         val verifyConfig = project.verify
         if (verifyConfig == null) {
             echo("No 'verify' section found in $file", err = true)
-            exitProcess(ExitCode.CONFIG_ERROR.code)
+            throw ProgramResult(ExitCode.CONFIG_ERROR.code)
         }
 
         echo("Running: ${verifyConfig.command}")
@@ -406,7 +406,7 @@ class VerifyCommand : CliktCommand(name = "verify") {
             if (!completed) {
                 process.destroyForcibly()
                 echo("${Terminal.red("TIMEOUT")} after ${verifyConfig.timeoutSeconds}s")
-                exitProcess(ExitCode.TASK_FAILURE.code)
+                throw ProgramResult(ExitCode.TASK_FAILURE.code)
             }
 
             val exitCode = process.exitValue()
@@ -414,11 +414,11 @@ class VerifyCommand : CliktCommand(name = "verify") {
                 echo("${Terminal.green("PASSED")} ${Terminal.dim("(${formatElapsed(elapsed)})")}")
             } else {
                 echo("${Terminal.red("FAILED")} (exit $exitCode) ${Terminal.dim("(${formatElapsed(elapsed)})")}")
-                exitProcess(ExitCode.TASK_FAILURE.code)
+                throw ProgramResult(ExitCode.TASK_FAILURE.code)
             }
         } catch (e: Exception) {
             echo("Error: ${e.message}", err = true)
-            exitProcess(ExitCode.TASK_FAILURE.code)
+            throw ProgramResult(ExitCode.TASK_FAILURE.code)
         }
     }
 }
@@ -546,7 +546,7 @@ class ReplayCommand : CliktCommand(name = "replay") {
                 for (f in diff.added.sorted()) echo("  + $f")
                 for (f in diff.modified.sorted()) echo("  ~ $f")
                 for (f in diff.deleted.sorted()) echo("  - $f")
-                exitProcess(ExitCode.TASK_FAILURE.code)
+                throw ProgramResult(ExitCode.TASK_FAILURE.code)
             }
         }
     }

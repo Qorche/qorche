@@ -16,6 +16,7 @@
     <ID>MaxLineLength:Commands.kt$RunCommand$echo("${Terminal.red("[VERIFY]")} Group ${verifyResult.groupIndex} FAILED (exit ${verifyResult.exitCode}) ${Terminal.dim("(${formatElapsed(verifyResult.elapsedMs)})")}")</ID>
     <ID>MaxLineLength:Commands.kt$RunCommand$private val hashAlgorithm by option("--hash", help = "Hash algorithm: crc32c (fastest), sha1 (default, same as Git), sha256 (cryptographic)")</ID>
     <ID>MaxLineLength:Commands.kt$RunCommand$private val preflightThreshold by option("--preflight-threshold", help = "File count above which a faster hash algorithm is suggested (default: ${SnapshotCreator.DEFAULT_LARGE_REPO_THRESHOLD})").int()</ID>
+    <ID>ThrowsCount:Commands.kt$RunCommand$private fun runGraphFromFile( workDir: Path, orchestrator: Orchestrator, startTime: Long )</ID>
     <ID>TooGenericExceptionCaught:Commands.kt$VerifyCommand$e: Exception</ID>
   </CurrentIssues>
 </SmellBaseline>
