@@ -36,6 +36,12 @@ class InitCommand(
             echo("Created tasks.yaml (${projectType.label} project)")
         }
 
+        val runnersExample = qorcheDir.resolve("runners.example.yaml")
+        if (!Files.exists(runnersExample)) {
+            Files.writeString(runnersExample, generateRunnersExample())
+            echo("Created .qorche/runners.example.yaml")
+        }
+
         val qorignoreFile = workDir.resolve(".qorignore")
         if (!Files.exists(qorignoreFile)) {
             val ignoreContent = generateQorignore(projectType)
@@ -180,6 +186,38 @@ private fun buildProjectForType(type: ProjectType, name: String): TaskProject = 
         task("finalize", "Final task") { dependsOn("task-a", "task-b") }
     }
 }
+
+// --- runners.example.yaml generation ---
+
+internal fun generateRunnersExample(): String = """
+    |# Runner configuration for this project.
+    |# Copy this file to .qorche/runners.yaml and fill in your values.
+    |# .qorche/runners.yaml is gitignored — secrets stay local.
+    |#
+    |# Layers (higher wins):
+    |#   1. .qorche/runners.yaml    — project defaults (this file, once copied)
+    |#   2. tasks.yaml -> runners:  — inline overrides (checked into repo)
+    |#   3. QORCHE_RUNNER_* env vars — CI/CD injection (highest priority)
+    |#
+    |# Use ${"\$"}{VAR} to reference environment variables in values.
+    |# Run 'qorche config --check tasks.yaml' to validate completeness.
+    |# Run 'qorche config --env-template tasks.yaml' for CI setup.
+    |
+    |runners: {}
+    |  # shell:
+    |  #   type: shell
+    |  #   allowed_commands: [npm, gradle, pytest]
+    |  #   timeout_seconds: 120
+    |  #   env:
+    |  #     CI: "true"
+    |
+    |  # claude:
+    |  #   type: claude-code
+    |  #   extra_args: [--dangerously-skip-permissions]
+    |  #   timeout_seconds: 300
+    |  #   env:
+    |  #     ANTHROPIC_API_KEY: ${"\$"}{ANTHROPIC_API_KEY}
+""".trimMargin()
 
 // --- .qorignore generation ---
 

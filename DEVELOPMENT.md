@@ -199,6 +199,87 @@ Existing YAML files without `runners` or per-task `runner` fields work unchanged
 7. Add tests using the same patterns as `ShellRunnerTest` or `ClaudeCodeAdapterTest`
 8. Do not depend on other adapters, each adapter is self-contained
 
+## Runner Configuration
+
+Runner configuration uses a layered model inspired by Terraform and Docker Compose. Higher layers override lower layers with field-level merge semantics.
+
+### Config layers
+
+| Layer | Location | Purpose | Checked in? |
+|-------|----------|---------|-------------|
+| **Project defaults** | `.qorche/runners.yaml` | Project-level runner infra (endpoints, timeouts, secrets) | No (gitignored) |
+| **Task inline** | `tasks.yaml` `runners:` block | The contract: what runners a task file needs | Yes |
+| **Environment** | `QORCHE_RUNNER_{NAME}_{FIELD}` env vars | CI/CD injection, secrets, overrides | N/A |
+
+Higher layer wins. `tasks.yaml` defines the **shape** (what runners exist); `.qorche/runners.yaml` and env vars fill in the **details**. Missing required fields after merge produce a clear error at validation time.
+
+### `runners.example.yaml`
+
+`qorche init` generates a `runners.example.yaml` template in the project root (like `.env.example`). This file is checked in and documents the runners the project expects, without containing actual secrets.
+
+### `qorche config` command
+
+```bash
+# Show merged config with all layers resolved
+qorche config tasks.yaml
+
+# Check for missing/incomplete runner configuration
+qorche config tasks.yaml --check
+
+# Output env var template for CI setup
+qorche config tasks.yaml --env-template
+```
+
+`--check` tells you exactly what's missing and how to fix it. `--env-template` outputs a ready-to-paste block of environment variable assignments for CI pipelines.
+
+### `env:` field
+
+`RunnerConfig` supports an `env` field — a map of environment variables passed to the runner process. Values support `${VAR}` substitution from the host environment:
+
+```yaml
+runners:
+  claude:
+    type: claude-code
+    env:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  deploy:
+    type: shell
+    env:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+```
+
+Substitution is minimal: `${VAR}` only, no defaults, no nesting, no expressions. An unset variable produces a clear error.
+
+### Environment variable convention
+
+Runner fields can be overridden entirely via environment variables following this pattern:
+
+```
+QORCHE_RUNNER_{RUNNER_NAME}_{FIELD}=value
+```
+
+For example:
+```bash
+QORCHE_RUNNER_CLAUDE_TYPE=claude-code
+QORCHE_RUNNER_CLAUDE_TIMEOUT_SECONDS=300
+QORCHE_RUNNER_SHELL_ALLOWED_COMMANDS=npm,gradle,pytest
+```
+
+### CI example (GitHub Actions)
+
+```yaml
+- name: Run Qorche
+  env:
+    QORCHE_RUNNER_CLAUDE_TYPE: claude-code
+    QORCHE_RUNNER_CLAUDE_TIMEOUT_SECONDS: 300
+    QORCHE_RUNNER_CLAUDE_EXTRA_ARGS: --dangerously-skip-permissions
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  run: qorche run tasks.yaml
+```
+
+This lets the same `tasks.yaml` work locally (with `.qorche/runners.yaml` providing secrets) and in CI (with env vars injected by the pipeline).
+
 ## CI/CD
 
 - GitHub Actions runs tests on every push to `main`/`develop` and on PRs

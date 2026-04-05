@@ -115,6 +115,13 @@
           "description": "Maximum execution time in seconds per task invocation.",
           "default": 300,
           "minimum": 1
+        },
+        "env": {
+          "type": "object",
+          "description": "Environment variables passed to the runner process. Values may contain ${VAR} references resolved from the system environment.",
+          "additionalProperties": { "type": "string" },
+          "default": {},
+          "examples": [{"CI": "true", "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"}]
         }
       }
     },
