@@ -1,17 +1,24 @@
 complexity:
+  ComplexCondition:
+    excludes: ['**/test/**', '**/androidTest/**']
   LongMethod:
     threshold: 60
+    excludes: ['**/test/**', '**/androidTest/**']
   LongParameterList:
     functionThreshold: 8
     constructorThreshold: 10
+    excludes: ['**/test/**', '**/androidTest/**']
   CyclomaticComplexMethod:
     threshold: 20
+    excludes: ['**/test/**', '**/androidTest/**']
   TooManyFunctions:
     thresholdInFiles: 25
     thresholdInClasses: 20
     thresholdInInterfaces: 15
+    excludes: ['**/test/**', '**/androidTest/**']
   NestedBlockDepth:
     threshold: 5
+    excludes: ['**/test/**', '**/androidTest/**']
 
 style:
   MagicNumber:
