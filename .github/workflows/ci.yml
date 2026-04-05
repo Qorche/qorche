@@ -29,8 +29,8 @@ jobs:
         with:
           filters: |
             code:
-              - '**.kt'
-              - '**.kts'
+              - '**/*.kt'
+              - '**/*.kts'
               - 'gradle/**'
               - 'gradlew'
               - 'gradlew.bat'
