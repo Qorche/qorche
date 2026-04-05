@@ -1,0 +1,28 @@
+# Qorche task definition — Go project
+#
+# Runs vet and test in parallel. Both operate on the full module
+# so Qorche will detect conflicts if both modify the same file.
+#
+# Usage:
+#   qorche plan go.yaml    # preview execution order
+#   qorche run go.yaml     # execute tasks
+
+project: my-go-project
+
+runners:
+  shell:
+    type: shell
+    allowed_commands: [go]
+    timeout_seconds: 120
+
+tasks:
+  # Group 1: vet and test run in parallel
+  - id: vet
+    instruction: "go vet ./..."
+    runner: shell
+    files: ["."]
+
+  - id: test
+    instruction: "go test ./... -v"
+    runner: shell
+    files: ["."]

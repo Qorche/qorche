@@ -1,0 +1,36 @@
+# Qorche task definition — Node.js project
+#
+# Runs lint and test in parallel, then builds after both succeed.
+# File scopes enable conflict detection if lint and test modify
+# overlapping paths in src/.
+#
+# Usage:
+#   qorche plan node.yaml    # preview execution order
+#   qorche run node.yaml     # execute tasks
+
+project: my-node-project
+
+runners:
+  shell:
+    type: shell
+    allowed_commands: [npm]
+    timeout_seconds: 120
+
+tasks:
+  # Group 1: lint and test run in parallel
+  - id: lint
+    instruction: "npm run lint -- --fix"
+    runner: shell
+    files: [src/]
+
+  - id: test
+    instruction: "npm test"
+    runner: shell
+    files: [src/, test/]
+
+  # Group 2: build waits for lint + test
+  - id: build
+    instruction: "npm run build"
+    runner: shell
+    depends_on: [lint, test]
+    files: [dist/]

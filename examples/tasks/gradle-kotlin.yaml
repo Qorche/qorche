@@ -1,0 +1,36 @@
+# Qorche task definition — Gradle/Kotlin project
+#
+# Runs lint and test in parallel, then builds after both succeed.
+# If lint and test modify overlapping files, Qorche detects the conflict
+# and retries the loser against the winner's changes.
+#
+# Usage:
+#   qorche plan gradle-kotlin.yaml    # preview execution order
+#   qorche run gradle-kotlin.yaml     # execute tasks
+
+project: my-kotlin-project
+
+runners:
+  shell:
+    type: shell
+    allowed_commands: ["./gradlew"]
+    timeout_seconds: 180
+
+tasks:
+  # Group 1: lint and test run in parallel
+  - id: lint
+    instruction: "./gradlew detekt"
+    runner: shell
+    files: [src/main/]
+
+  - id: test
+    instruction: "./gradlew test"
+    runner: shell
+    files: [src/main/, src/test/]
+
+  # Group 2: build waits for lint + test to complete
+  - id: build
+    instruction: "./gradlew build -x test"
+    runner: shell
+    depends_on: [lint, test]
+    files: [build/]
