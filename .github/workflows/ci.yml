@@ -58,8 +58,16 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: Run Detekt
-        run: ./gradlew detekt
+      # Run detekt + tests in a single Gradle invocation with --parallel
+      # so Gradle can overlap module tasks (e.g. detekt on core while compiling agent).
+      # --continue ensures tests still run even if detekt fails.
+      - name: Run Detekt and tests with coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: ./gradlew detekt test koverXmlReport --parallel --continue
+
+      - name: Run Detekt and tests
+        if: matrix.os != 'ubuntu-latest'
+        run: ./gradlew detekt test --parallel --continue
 
       - name: Upload Detekt merged report
         if: always()
@@ -74,14 +82,6 @@ jobs:
         with:
           sarif_file: build/reports/detekt/merged.sarif
           category: detekt
-
-      - name: Run tests with coverage
-        if: matrix.os == 'ubuntu-latest'
-        run: ./gradlew test koverXmlReport
-
-      - name: Run tests
-        if: matrix.os != 'ubuntu-latest'
-        run: ./gradlew test
 
       - name: Post coverage to PR
         if: github.event_name == 'pull_request' && matrix.os == 'ubuntu-latest'
