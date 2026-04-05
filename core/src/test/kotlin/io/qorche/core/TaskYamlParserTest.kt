@@ -425,8 +425,8 @@ class TaskYamlParserTest {
     @Test
     fun `parseFileLenient reads file without runner validation`() {
         val tmpDir = Files.createTempDirectory("qorche-parser-test")
+        val file = tmpDir.resolve("tasks.yaml")
         try {
-            val file = tmpDir.resolve("tasks.yaml")
             file.writeText("""
                 project: test
                 tasks:
@@ -437,15 +437,21 @@ class TaskYamlParserTest {
             val project = TaskYamlParser.parseFileLenient(file)
             assertEquals("nonexistent", project.tasks[0].runner)
         } finally {
-            tmpDir.toFile().deleteRecursively()
+            Files.deleteIfExists(file)
+            Files.deleteIfExists(tmpDir)
         }
     }
 
     @Test
     fun `parseFileLenient rejects nonexistent file`() {
-        val fakePath = Path.of("/tmp/nonexistent-qorche-test-file.yaml")
-        assertFailsWith<IllegalArgumentException> {
-            TaskYamlParser.parseFileLenient(fakePath)
+        val tmpDir = Files.createTempDirectory("qorche-parser-test")
+        try {
+            val fakePath = tmpDir.resolve("nonexistent-qorche-test-file.yaml")
+            assertFailsWith<IllegalArgumentException> {
+                TaskYamlParser.parseFileLenient(fakePath)
+            }
+        } finally {
+            Files.deleteIfExists(tmpDir)
         }
     }
 }

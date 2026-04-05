@@ -1,5 +1,6 @@
 package io.qorche.cli
 
+import io.qorche.core.RunnerConfigLoader
 import io.qorche.core.TaskYamlParser
 import java.nio.file.Files
 import kotlin.io.path.writeText
@@ -115,5 +116,56 @@ class InitCommandTest {
         assertTrue(content.contains("# shell:"))
         assertTrue(content.contains("# claude:"))
         assertTrue(content.contains("\${ANTHROPIC_API_KEY}"))
+    }
+
+    @Test
+    fun `runners example yaml is parseable after uncommenting`() {
+        val template = generateRunnersExample()
+
+        // Uncomment the runner examples: lines starting with "  # " (indented comments)
+        // are runner definitions. Header comments start at column 0.
+        val uncommented = template.lines().joinToString("\n") { line ->
+            val stripped = line.trimStart()
+            val isHeaderComment = line == line.trimStart() && stripped.startsWith("#")
+            if (stripped.startsWith("#") && !isHeaderComment) {
+                line.replaceFirst("# ", "")
+            } else {
+                line
+            }
+        }
+
+        // Replace ${ANTHROPIC_API_KEY} with a real value so it's valid YAML
+        val withValues = uncommented.replace("\${ANTHROPIC_API_KEY}", "sk-test-key")
+
+        // Parse as a runners.yaml file through RunnerConfigLoader's RunnersFile schema
+        val parsed = RunnerConfigLoader.loadRunnersFromContent(withValues)
+        assertTrue(parsed.isNotEmpty(), "Should parse at least one runner")
+        assertTrue("shell" in parsed || "claude" in parsed, "Should contain shell or claude runner")
+    }
+
+    @Test
+    fun `generated tasks yaml round-trips through encode and parse`() {
+        val root = Files.createTempDirectory("qorche-init-test")
+        try {
+            for (type in ProjectType.entries) {
+                val yaml = generateTasksYaml(type, root)
+                val project = TaskYamlParser.parse(yaml)
+
+                // Re-encode and parse again — should produce equivalent structure
+                val reEncoded = TaskYamlParser.encode(project)
+                val reParsed = TaskYamlParser.parse(reEncoded)
+
+                assertEquals(
+                    project.tasks.size, reParsed.tasks.size,
+                    "Round-trip should preserve task count for $type"
+                )
+                assertEquals(
+                    project.tasks.map { it.id }, reParsed.tasks.map { it.id },
+                    "Round-trip should preserve task IDs for $type"
+                )
+            }
+        } finally {
+            root.toFile().deleteRecursively()
+        }
     }
 }

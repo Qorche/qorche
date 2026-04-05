@@ -100,6 +100,13 @@ object RunnerConfigLoader {
 
     data class ConfigDiagnostic(val runnerName: String, val message: String)
 
+    /**
+     * Parse a runners YAML string directly into a runner config map.
+     * Useful for testing generated templates.
+     */
+    fun loadRunnersFromContent(content: String): Map<String, RunnerConfig> =
+        runnersYaml.decodeFromString<RunnersFile>(content).runners
+
     // --- Internal ---
 
     internal fun loadProjectRunners(workDir: Path): Map<String, RunnerConfig> {

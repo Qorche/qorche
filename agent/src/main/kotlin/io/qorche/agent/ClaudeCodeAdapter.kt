@@ -11,6 +11,12 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Runs Claude Code CLI as a child process.
+ *
+ * Unlike [ShellRunner], this adapter inherits all parent-process environment
+ * variables and merges [env] on top. This is intentional: Claude Code typically
+ * needs inherited vars like `ANTHROPIC_API_KEY` and `PATH`. [ShellRunner] uses
+ * an [envFilter][ShellRunner] to restrict inherited vars for tighter sandboxing.
+ *
  * @param timeoutSeconds Maximum time to wait for the process to complete.
  * @param extraArgs Additional CLI arguments passed to claude (e.g. "--dangerously-skip-permissions").
  * @param env Environment variables to set on the runner process.

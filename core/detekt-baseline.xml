@@ -26,6 +26,7 @@
     <ID>TooGenericExceptionCaught:Orchestrator.kt$Orchestrator$e: Exception</ID>
     <ID>TooGenericExceptionCaught:TaskYamlParser.kt$TaskYamlParser$e: Exception</ID>
     <ID>TooManyFunctions:Orchestrator.kt$Orchestrator</ID>
+    <ID>TooManyFunctions:RunnerConfigLoader.kt$RunnerConfigLoader</ID>
     <ID>UnusedParameter:Orchestrator.kt$Orchestrator$baseSnapshot: Snapshot</ID>
   </CurrentIssues>
 </SmellBaseline>
