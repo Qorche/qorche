@@ -13,7 +13,6 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
-  packages: write
 
 jobs:
   release:
@@ -52,6 +51,9 @@ jobs:
     needs: release
     if: needs.release.outputs.new_release == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@v4
