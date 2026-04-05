@@ -1,15 +1,18 @@
 package io.qorche.cli
 
+import io.qorche.core.AgentRunner
 import io.qorche.core.CycleDetectedException
 import io.qorche.core.ExitCode
 import io.qorche.core.HashAlgorithm
 import io.qorche.core.Orchestrator
+import io.qorche.core.RunnerConfig
 import io.qorche.core.Snapshot
 import io.qorche.core.SnapshotCreator
 import io.qorche.core.SnapshotDiff
 import io.qorche.core.TaskGraph
 import io.qorche.core.TaskParseException
 import io.qorche.core.TaskProject
+import io.qorche.core.TaskStatus
 import io.qorche.core.TaskYamlParser
 import io.qorche.core.VerifyConfig
 import io.qorche.core.WALEntry
@@ -340,3 +343,137 @@ fun formatGraphTextSummary(result: Orchestrator.GraphResult, elapsedMs: Long): L
         add("Logs: .qorche/logs/")
         add("Total time: ${elapsedMs}ms")
     }
+
+// --- Single-task result formatting ---
+
+fun formatSingleTaskText(result: Orchestrator.RunResult, elapsedMs: Long): List<String> = buildList {
+    add("")
+    val diff = result.diff
+    if (diff.totalChanges > 0) {
+        add("Changes: ${diff.summary()}")
+        for (f in diff.added) add("  + $f")
+        for (f in diff.modified) add("  ~ $f")
+        for (f in diff.deleted) add("  - $f")
+    } else {
+        add("No file changes detected")
+    }
+    add("Completed (exit ${result.agentResult.exitCode}) in ${elapsedMs}ms")
+}
+
+fun buildSingleTaskGraphResult(
+    result: Orchestrator.RunResult
+): Orchestrator.GraphResult {
+    val succeeded = result.agentResult.exitCode == 0
+    return Orchestrator.GraphResult(
+        project = "cli-run",
+        taskResults = mapOf(
+            "cli-run" to Orchestrator.TaskOutcome(
+                taskId = "cli-run",
+                status = if (succeeded) TaskStatus.COMPLETED else TaskStatus.FAILED,
+                runResult = result
+            )
+        ),
+        totalTasks = 1,
+        completedTasks = if (succeeded) 1 else 0,
+        failedTasks = if (succeeded) 0 else 1,
+        skippedTasks = 0
+    )
+}
+
+// --- Graph run preparation ---
+
+sealed class GraphRunSetup {
+    data class Ready(
+        val project: TaskProject,
+        val graph: TaskGraph,
+        val runners: Map<String, AgentRunner>,
+        val defaultRunner: AgentRunner
+    ) : GraphRunSetup()
+
+    data class Failed(
+        val message: String,
+        val exitCode: ExitCode
+    ) : GraphRunSetup()
+}
+
+fun prepareGraphRun(
+    filePath: Path,
+    buildRunners: (Map<String, RunnerConfig>) -> Map<String, AgentRunner>,
+    fallbackRunner: () -> AgentRunner
+): GraphRunSetup {
+    val (project, graph) = when (val loaded = loadTaskGraph(filePath)) {
+        is TaskGraphLoadResult.Success -> loaded.project to loaded.graph
+        is TaskGraphLoadResult.ParseError -> return GraphRunSetup.Failed(loaded.message, ExitCode.CONFIG_ERROR)
+    }
+
+    val runners = try {
+        buildRunners(project.runners)
+    } catch (e: IllegalArgumentException) {
+        return GraphRunSetup.Failed(e.message ?: "Invalid runner configuration", ExitCode.CONFIG_ERROR)
+    }
+
+    val defaultRunner = if (project.defaultRunner != null) {
+        runners[project.defaultRunner]
+            ?: return GraphRunSetup.Failed(
+                "default_runner '${project.defaultRunner}' not found in runners",
+                ExitCode.CONFIG_ERROR
+            )
+    } else {
+        fallbackRunner()
+    }
+
+    return GraphRunSetup.Ready(project, graph, runners, defaultRunner)
+}
+
+// --- History formatting ---
+
+data class HistoryLine(
+    val idPrefix: String,
+    val timestamp: String,
+    val description: String,
+    val fileCount: Int
+)
+
+data class HistoryOutput(
+    val lines: List<HistoryLine>,
+    val truncatedCount: Int
+)
+
+fun formatHistory(snapshots: List<Snapshot>, limit: Int?): HistoryOutput {
+    val shown = if (limit != null) snapshots.take(limit) else snapshots
+    val lines = shown.map { snap ->
+        HistoryLine(
+            idPrefix = snap.id.take(8),
+            timestamp = snap.timestamp.toString(),
+            description = snap.description,
+            fileCount = snap.fileHashes.size
+        )
+    }
+    val truncated = if (limit != null && snapshots.size > limit) snapshots.size - limit else 0
+    return HistoryOutput(lines, truncated)
+}
+
+// --- Diff resolution ---
+
+sealed class DiffResolution {
+    data class Resolved(val fullId1: String, val fullId2: String) : DiffResolution()
+    data class NoComparison(val message: String) : DiffResolution()
+}
+
+fun resolveSnapshotIds(
+    id1: String,
+    id2: String?,
+    snapshots: List<Snapshot>
+): DiffResolution {
+    val resolvedId2 = id2 ?: run {
+        val snap = snapshots.find { it.id.startsWith(id1) }
+        snap?.parentId ?: return DiffResolution.NoComparison(
+            "Cannot determine comparison snapshot. Provide two IDs."
+        )
+    }
+
+    val fullId1 = snapshots.find { it.id.startsWith(id1) }?.id ?: id1
+    val fullId2 = snapshots.find { it.id.startsWith(resolvedId2) }?.id ?: resolvedId2
+
+    return DiffResolution.Resolved(fullId1, fullId2)
+}
