@@ -31,7 +31,8 @@ See docs/PHASE1_PLAN.md for the full roadmap, data models, milestone definitions
 (M0 -> M1 -> M2), architecture decisions, and relationship to AgentFS, Koog, CASS,
 and other projects. Follow the task sequence defined there.
 
-See docs/WORKPLAN.md for active tasks and backlog. Check this first when starting a new session.
+Task backlog lives in Linear (private) and GitHub Issues (public). Check
+Linear first when starting a new session.
 
 ## Design principles
 

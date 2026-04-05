@@ -1,0 +1,91 @@
+# Qorche CI — GitHub Actions workflow template
+#
+# Copy this file to .github/workflows/qorche.yml in your repository.
+# Customize the tasks.yaml path and runner environment variables below.
+#
+# Prerequisites:
+#   - A tasks.yaml file defining your task graph (see examples/tasks/)
+#   - GitHub Secrets for any API keys your runners need
+#
+# Docs: https://docs.qorche.dev
+
+name: Qorche
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  # Path to your task definition file
+  TASKS_FILE: tasks.yaml
+  # Qorche version — pin to a specific release for reproducibility
+  QORCHE_VERSION: latest
+
+jobs:
+  qorche:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Download the Qorche native binary — no JDK required
+      # TODO: add checksum verification once release pipeline publishes .sha256 digests
+      - name: Install Qorche
+        run: |
+          if [ "$QORCHE_VERSION" = "latest" ]; then
+            URL="https://github.com/swatarianess/qorche/releases/latest/download/qorche-linux-amd64"
+          else
+            URL="https://github.com/swatarianess/qorche/releases/download/${QORCHE_VERSION}/qorche-linux-amd64"
+          fi
+          curl -fsSL -o qorche "$URL"
+          # For production use, pin QORCHE_VERSION and verify the checksum:
+          # echo "<sha256>  qorche" | sha256sum -c -
+          chmod +x qorche
+          echo "$PWD" >> "$GITHUB_PATH"
+
+      - name: Show version
+        run: qorche version
+
+      # Validate that all runners referenced in tasks.yaml are configured.
+      # Catches missing secrets before wasting CI minutes.
+      - name: Validate configuration
+        env:
+          # --- Customize: set QORCHE_RUNNER_* vars for your runners ---
+          # These override anything in tasks.yaml's inline runners block.
+          # Use GitHub Secrets for sensitive values.
+          # Uncomment and adjust for your project:
+          # QORCHE_RUNNER_SHELL_TYPE: shell
+          # QORCHE_RUNNER_SHELL_ALLOWED_COMMANDS: npm,ruff,pytest,cargo,go,./gradlew
+          # QORCHE_RUNNER_SHELL_TIMEOUT_SECONDS: "120"
+        run: qorche config "$TASKS_FILE" --check
+
+      # Preview the execution plan (dry run)
+      - name: Plan execution
+        run: qorche plan "$TASKS_FILE"
+
+      # Run the task graph with MVCC conflict detection
+      - name: Run tasks
+        env:
+          # --- Customize: same runner env vars as above ---
+          # Uncomment and adjust for your project:
+          # QORCHE_RUNNER_SHELL_TYPE: shell
+          # QORCHE_RUNNER_SHELL_ALLOWED_COMMANDS: npm,ruff,pytest,cargo,go,./gradlew
+          # QORCHE_RUNNER_SHELL_TIMEOUT_SECONDS: "120"
+          # Add API keys if using claude-code runner:
+          # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # QORCHE_RUNNER_CLAUDE_TYPE: claude-code
+          # QORCHE_RUNNER_CLAUDE_TIMEOUT_SECONDS: "300"
+        run: qorche run "$TASKS_FILE" --output json
+
+      # Upload Qorche artifacts for debugging failed runs.
+      # Contains snapshots, WAL, and per-task logs.
+      - name: Upload Qorche artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qorche-artifacts
+          path: .qorche/
+          if-no-files-found: ignore

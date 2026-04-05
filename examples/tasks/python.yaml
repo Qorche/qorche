@@ -1,0 +1,31 @@
+# Qorche task definition — Python project
+#
+# Runs lint and test in parallel. Both touch src/ so Qorche will
+# detect conflicts if both modify the same file. The loser retries
+# automatically with max_retries.
+#
+# Usage:
+#   qorche plan python.yaml    # preview execution order
+#   qorche run python.yaml     # execute tasks
+
+project: my-python-project
+
+runners:
+  shell:
+    type: shell
+    allowed_commands: [ruff, pytest]
+    timeout_seconds: 120
+
+tasks:
+  # Group 1: lint and test run in parallel
+  - id: lint
+    instruction: "ruff check --fix src/"
+    runner: shell
+    files: [src/]
+    max_retries: 1
+
+  - id: test
+    instruction: "pytest tests/ -v"
+    runner: shell
+    files: [src/, tests/]
+    max_retries: 1

@@ -139,6 +139,12 @@ tasks:
 
 Built-in runner types: `shell`, `claude-code`. Tasks without a `runner` field use `default_runner`. If `default_runner` is not set, the shell runner is used.
 
+### CI integration
+
+See [`examples/github-actions/`](examples/github-actions/) for a ready-to-use GitHub Actions workflow template.
+
+Language-specific task examples: [Gradle/Kotlin](examples/tasks/gradle-kotlin.yaml) · [Node](examples/tasks/node.yaml) · [Python](examples/tasks/python.yaml) · [Rust](examples/tasks/rust.yaml) · [Go](examples/tasks/go.yaml)
+
 ## Terminal output
 
 ```
@@ -443,16 +449,6 @@ qorche/
 ```
 
 Module boundaries are strict: `core/` depends on nothing, `agent/` depends on `core/`, `cli/` depends on both. See [DEVELOPMENT.md](DEVELOPMENT.md) for the full development guide.
-
-## Status
-
-**Core (complete):** M0–M3, project scaffold, snapshot system, task graph execution, parallel execution with MVCC conflict detection, retry-on-conflict, scope audit, loser rollback.
-
-**CLI (complete):** JSON output, colored terminal output, progress reporting, native binary builds, GitHub Releases, per-task logs, status command, init with project detection, validate command, clean command.
-
-**Shared library (complete):** 12 C FFI entry points covering the full lifecycle (parse, validate, plan, run, snapshot, diff, clean). Python test harness.
-
-**Planned:** MCP server integration, TUI monitor.
 
 ## Requirements
 

@@ -1,0 +1,36 @@
+# Qorche task definition — Rust project
+#
+# Runs clippy and test in parallel, then builds after both succeed.
+# Cargo commands share the target/ directory but Qorche tracks src/
+# for conflict detection.
+#
+# Usage:
+#   qorche plan rust.yaml    # preview execution order
+#   qorche run rust.yaml     # execute tasks
+
+project: my-rust-project
+
+runners:
+  shell:
+    type: shell
+    allowed_commands: [cargo]
+    timeout_seconds: 180
+
+tasks:
+  # Group 1: clippy and test run in parallel
+  - id: clippy
+    instruction: "cargo clippy --fix --allow-dirty"
+    runner: shell
+    files: [src/]
+
+  - id: test
+    instruction: "cargo test"
+    runner: shell
+    files: [src/, tests/]
+
+  # Group 2: build waits for clippy + test
+  - id: build
+    instruction: "cargo build --release"
+    runner: shell
+    depends_on: [clippy, test]
+    files: [target/]

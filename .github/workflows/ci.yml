@@ -3,22 +3,8 @@ name: CI
 on:
   push:
     branches: [main, develop]
-    paths:
-      - '**.kt'
-      - '**.kts'
-      - 'gradle/**'
-      - 'gradlew'
-      - 'gradlew.bat'
-      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main, develop]
-    paths:
-      - '**.kt'
-      - '**.kts'
-      - 'gradle/**'
-      - 'gradlew'
-      - 'gradlew.bat'
-      - '.github/workflows/ci.yml'
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -31,7 +17,28 @@ permissions:
   security-events: write
 
 jobs:
+  # Detect whether source code changed — used to skip expensive jobs on docs-only PRs
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**.kt'
+              - '**.kts'
+              - 'gradle/**'
+              - 'gradlew'
+              - 'gradlew.bat'
+              - '.github/workflows/ci.yml'
+
   test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -97,3 +104,23 @@ jobs:
         with:
           name: test-reports-${{ matrix.os }}
           path: '**/build/reports/tests/'
+
+  # Gate job — the single required status check for branch protection.
+  # Always runs: passes when tests pass or were skipped (docs-only PRs),
+  # fails when tests fail.
+  gate:
+    runs-on: ubuntu-latest
+    needs: [changes, test]
+    if: always()
+    steps:
+      - name: Check test results
+        run: |
+          if [[ "${{ needs.changes.result }}" == "failure" || "${{ needs.changes.result }}" == "cancelled" ]]; then
+            echo "Changes detection failed or was cancelled"
+            exit 1
+          fi
+          if [[ "${{ needs.test.result }}" == "failure" || "${{ needs.test.result }}" == "cancelled" ]]; then
+            echo "Tests failed or were cancelled"
+            exit 1
+          fi
+          echo "Tests passed or were skipped — gate OK"
