@@ -230,4 +230,52 @@ class ConfigCommandTest {
             tmpDir.toFile().deleteRecursively()
         }
     }
+
+    @Test
+    fun `config fails on invalid yaml`() {
+        val tmpDir = Files.createTempDirectory("qorche-config-test")
+        try {
+            val tasksFile = tmpDir.resolve("tasks.yaml")
+            tasksFile.writeText("invalid: yaml: [broken")
+
+            val cmd = ConfigCommand(workDirProvider = { tmpDir })
+            val result = cmd.test(listOf(tasksFile.toString()))
+            assertEquals(2, result.statusCode)
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `config fails on missing env var reference`() {
+        val tmpDir = Files.createTempDirectory("qorche-config-test")
+        try {
+            val qorcheDir = tmpDir.resolve(".qorche")
+            Files.createDirectories(qorcheDir)
+            qorcheDir.resolve("runners.yaml").writeText("""
+                runners:
+                  claude:
+                    type: claude-code
+                    env:
+                      API_KEY: ${'$'}{MISSING_SECRET}
+            """.trimIndent())
+
+            val tasksFile = tmpDir.resolve("tasks.yaml")
+            tasksFile.writeText("""
+                project: test
+                tasks:
+                  - id: t1
+                    instruction: "do stuff"
+            """.trimIndent())
+
+            val cmd = ConfigCommand(
+                workDirProvider = { tmpDir },
+                envProvider = { null }
+            )
+            val result = cmd.test(listOf(tasksFile.toString()))
+            assertEquals(2, result.statusCode)
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
 }

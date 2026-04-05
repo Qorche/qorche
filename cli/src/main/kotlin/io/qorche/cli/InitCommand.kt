@@ -203,7 +203,7 @@ internal fun generateRunnersExample(): String = """
     |# Run 'qorche config --check tasks.yaml' to validate completeness.
     |# Run 'qorche config --env-template tasks.yaml' for CI setup.
     |
-    |runners: {}
+    |runners:
     |  # shell:
     |  #   type: shell
     |  #   allowed_commands: [npm, gradle, pytest]

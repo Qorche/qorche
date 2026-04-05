@@ -452,7 +452,7 @@ Module boundaries are strict: `core/` depends on nothing, `agent/` depends on `c
 
 **Shared library (complete):** 12 C FFI entry points covering the full lifecycle (parse, validate, plan, run, snapshot, diff, clean). Python test harness.
 
-**Planned:** Externalized runner configuration (layered config, env var injection), MCP server integration, TUI monitor.
+**Planned:** MCP server integration, TUI monitor.
 
 ## Requirements
 

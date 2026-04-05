@@ -1,5 +1,8 @@
 package io.qorche.core
 
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -388,5 +391,61 @@ class TaskYamlParserTest {
         assertTrue(groups[1].containsAll(listOf("backend", "frontend")))
         assertEquals(2, groups[1].size)
         assertEquals(listOf("integrate"), groups[2])
+    }
+
+    // --- parseLenient ---
+
+    @Test
+    fun `parseLenient accepts undefined runner references`() {
+        val yaml = """
+            project: test
+            tasks:
+              - id: deploy
+                instruction: "deploy to prod"
+                runner: undefined-runner
+        """.trimIndent()
+        val project = TaskYamlParser.parseLenient(yaml)
+        assertEquals("undefined-runner", project.tasks[0].runner)
+    }
+
+    @Test
+    fun `parseLenient rejects blank content`() {
+        assertFailsWith<IllegalArgumentException> {
+            TaskYamlParser.parseLenient("   ")
+        }
+    }
+
+    @Test
+    fun `parseLenient throws TaskParseException for malformed YAML`() {
+        assertFailsWith<TaskParseException> {
+            TaskYamlParser.parseLenient("invalid: yaml: [broken")
+        }
+    }
+
+    @Test
+    fun `parseFileLenient reads file without runner validation`() {
+        val tmpDir = Files.createTempDirectory("qorche-parser-test")
+        try {
+            val file = tmpDir.resolve("tasks.yaml")
+            file.writeText("""
+                project: test
+                tasks:
+                  - id: task1
+                    instruction: "do stuff"
+                    runner: nonexistent
+            """.trimIndent())
+            val project = TaskYamlParser.parseFileLenient(file)
+            assertEquals("nonexistent", project.tasks[0].runner)
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `parseFileLenient rejects nonexistent file`() {
+        val fakePath = Path.of("/tmp/nonexistent-qorche-test-file.yaml")
+        assertFailsWith<IllegalArgumentException> {
+            TaskYamlParser.parseFileLenient(fakePath)
+        }
     }
 }

@@ -71,9 +71,13 @@ data class RunnerConfig(
     @SerialName("allowed_commands")
     val allowedCommands: List<String> = emptyList(),
     @SerialName("timeout_seconds")
-    val timeoutSeconds: Long = 300,
+    val timeoutSeconds: Long = DEFAULT_TIMEOUT_SECONDS,
     val env: Map<String, String> = emptyMap()
-)
+) {
+    companion object {
+        const val DEFAULT_TIMEOUT_SECONDS: Long = 300
+    }
+}
 
 /**
  * Configuration for a post-execution verification step.

@@ -332,4 +332,45 @@ class RunnerConfigLoaderTest {
         val template = RunnerConfigLoader.envTemplate(runners)
         assertTrue(template.contains("QORCHE_RUNNER_CLAUDE_ENV_ANTHROPIC_API_KEY=sk-123"))
     }
+
+    // --- round-trip: envTemplate -> applyEnvOverrides ---
+
+    @Test
+    fun `envTemplate output can be parsed back as env overrides`() {
+        val runners = mapOf(
+            "shell" to RunnerConfig(
+                type = "shell",
+                allowedCommands = listOf("npm"),
+                timeoutSeconds = 120,
+                env = mapOf("CI" to "true", "NODE_ENV" to "production")
+            )
+        )
+        // Generate the template
+        val template = RunnerConfigLoader.envTemplate(runners)
+
+        // Parse template lines into an env map (simulating what CI would set)
+        val envMap = template.lines()
+            .filter { it.contains("=") }
+            .associate { line ->
+                val (key, value) = line.split("=", limit = 2)
+                key to value
+            }
+
+        // Apply those env vars as overrides to a base config that already declares the keys
+        // (env var overrides can only replace existing keys, not add new ones)
+        val base = mapOf(
+            "shell" to RunnerConfig(
+                type = "shell",
+                env = mapOf("CI" to "false", "NODE_ENV" to "dev")
+            )
+        )
+        val result = RunnerConfigLoader.applyEnvOverrides(base) { envMap[it] }
+
+        assertEquals("shell", result["shell"]?.type)
+        assertEquals(listOf("npm"), result["shell"]?.allowedCommands)
+        assertEquals(120, result["shell"]?.timeoutSeconds)
+        // Env vars should be applied via QORCHE_RUNNER_SHELL_ENV_CI and QORCHE_RUNNER_SHELL_ENV_NODE_ENV
+        assertEquals("true", result["shell"]?.env?.get("CI"))
+        assertEquals("production", result["shell"]?.env?.get("NODE_ENV"))
+    }
 }

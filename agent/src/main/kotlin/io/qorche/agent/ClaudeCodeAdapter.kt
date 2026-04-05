@@ -13,10 +13,12 @@ import java.util.concurrent.TimeUnit
  * Runs Claude Code CLI as a child process.
  * @param timeoutSeconds Maximum time to wait for the process to complete.
  * @param extraArgs Additional CLI arguments passed to claude (e.g. "--dangerously-skip-permissions").
+ * @param env Environment variables to set on the runner process.
  */
 class ClaudeCodeAdapter(
     private val timeoutSeconds: Long = 300,
-    private val extraArgs: List<String> = emptyList()
+    private val extraArgs: List<String> = emptyList(),
+    private val env: Map<String, String> = emptyMap()
 ) : AgentRunner {
 
     override fun run(
@@ -26,10 +28,13 @@ class ClaudeCodeAdapter(
     ): Flow<AgentEvent> = flow {
         val command = buildCommand(instruction)
         val process = try {
-            ProcessBuilder(command)
+            val pb = ProcessBuilder(command)
                 .directory(workingDirectory.toFile())
                 .redirectErrorStream(true)
-                .start()
+            if (env.isNotEmpty()) {
+                pb.environment().putAll(env)
+            }
+            pb.start()
         } catch (e: Exception) {
             emit(AgentEvent.Error("Failed to start process: ${e.message}"))
             emit(AgentEvent.Completed(exitCode = 2))

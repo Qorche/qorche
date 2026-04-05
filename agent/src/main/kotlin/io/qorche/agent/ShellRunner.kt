@@ -30,7 +30,8 @@ import kotlin.io.path.isDirectory
 class ShellRunner(
     private val allowedCommands: Set<String>,
     private val timeoutSeconds: Long = 300,
-    private val envFilter: (Map<String, String>) -> Map<String, String> = { it }
+    private val envFilter: (Map<String, String>) -> Map<String, String> = { it },
+    private val env: Map<String, String> = emptyMap()
 ) : AgentRunner {
 
     init {
@@ -65,13 +66,7 @@ class ShellRunner(
             return@flow
         }
 
-        val processBuilder = ProcessBuilder(tokens)
-            .directory(workingDirectory.toFile())
-            .redirectErrorStream(true)
-
-        val filteredEnv = envFilter(processBuilder.environment().toMap())
-        processBuilder.environment().clear()
-        processBuilder.environment().putAll(filteredEnv)
+        val processBuilder = buildProcess(tokens, workingDirectory)
 
         val process = try {
             processBuilder.start()
@@ -107,6 +102,20 @@ class ShellRunner(
             }
         }
     }.flowOn(Dispatchers.IO)
+
+    private fun buildProcess(tokens: List<String>, workingDirectory: Path): ProcessBuilder {
+        val processBuilder = ProcessBuilder(tokens)
+            .directory(workingDirectory.toFile())
+            .redirectErrorStream(true)
+
+        val filteredEnv = envFilter(processBuilder.environment().toMap())
+        processBuilder.environment().clear()
+        processBuilder.environment().putAll(filteredEnv)
+        if (env.isNotEmpty()) {
+            processBuilder.environment().putAll(env)
+        }
+        return processBuilder
+    }
 
     private fun isAllowed(executable: String): Boolean {
         val baseName = executable
