@@ -472,8 +472,10 @@ fun resolveSnapshotIds(
         )
     }
 
-    val fullId1 = snapshots.find { it.id.startsWith(id1) }?.id ?: id1
-    val fullId2 = snapshots.find { it.id.startsWith(resolvedId2) }?.id ?: resolvedId2
+    val fullId1 = snapshots.find { it.id.startsWith(id1) }?.id
+        ?: return DiffResolution.NoComparison("Snapshot with prefix '$id1' not found.")
+    val fullId2 = snapshots.find { it.id.startsWith(resolvedId2) }?.id
+        ?: return DiffResolution.NoComparison("Snapshot with prefix '$resolvedId2' not found.")
 
     return DiffResolution.Resolved(fullId1, fullId2)
 }

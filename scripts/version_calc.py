@@ -40,7 +40,7 @@ class Version:
     minor: int
     patch: int
 
-    def bump(self, level: BumpLevel) -> "Version":
+    def bump(self, level: BumpLevel) -> Version:
         if level == BumpLevel.MAJOR:
             return Version(self.major + 1, 0, 0)
         if level == BumpLevel.MINOR:
@@ -133,6 +133,11 @@ def next_version(current: Version, commits: list[CommitInfo]) -> Version:
     return current.bump(calculate_bump(commits))
 
 
+def filter_releasable(commits: list[CommitInfo]) -> list[CommitInfo]:
+    """Return commits that would trigger a release."""
+    return [c for c in commits if _RELEASE_TYPES.get(c.commit_type, BumpLevel.NONE) != BumpLevel.NONE or c.breaking]
+
+
 def stamp_dev(current: Version, commits: list[CommitInfo], commit_count: int) -> str:
     """Generate a dev version stamp like 'v0.2.0-dev.5'."""
     nv = next_version(current, commits)
@@ -165,7 +170,7 @@ def preflight_check(
     """Run preflight checks for a PR and return structured results."""
     bump = calculate_bump(commits)
     nv = next_version(current, commits)
-    releasable = [c for c in commits if _RELEASE_TYPES.get(c.commit_type, BumpLevel.NONE) != BumpLevel.NONE or c.breaking]
+    releasable = filter_releasable(commits)
     breaking = [c for c in commits if c.breaking]
     warnings: list[str] = []
 
@@ -256,14 +261,17 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         tag = git_latest_semver_tag()
+        messages = git_commits_since(tag)
+        commits = [classify_commit(m) for m in messages]
+        commit_count = git_commit_count_since(tag)
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
+    except subprocess.CalledProcessError as e:
+        print(f"Git command failed: {e}", file=sys.stderr)
+        return 1
 
     current = parse_version(tag)
-    messages = git_commits_since(tag)
-    commits = [classify_commit(m) for m in messages]
-    commit_count = git_commit_count_since(tag)
 
     if args.current:
         print(f"v{current}")
@@ -280,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Next:    v{nv}")
         print(f"Bump:    {bump.name.lower() if bump != BumpLevel.NONE else 'none'}")
         print(f"Commits: {commit_count} since {tag}")
-        releasable = [c for c in commits if _RELEASE_TYPES.get(c.commit_type, BumpLevel.NONE) != BumpLevel.NONE or c.breaking]
+        releasable = filter_releasable(commits)
         if releasable:
             print(f"Releasable commits ({len(releasable)}):")
             for c in releasable:

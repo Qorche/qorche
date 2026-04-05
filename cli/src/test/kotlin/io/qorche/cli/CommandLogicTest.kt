@@ -806,6 +806,24 @@ class CommandLogicTest {
         assertIs<DiffResolution.NoComparison>(result)
     }
 
+    @Test
+    fun `resolveSnapshotIds returns NoComparison when id1 prefix not found`() {
+        val snapshots = listOf(makeSnapshot("abc12345-full-id"))
+
+        val result = resolveSnapshotIds("zzz-missing", "abc12345", snapshots)
+        assertIs<DiffResolution.NoComparison>(result)
+        assertTrue(result.message.contains("zzz-missing"))
+    }
+
+    @Test
+    fun `resolveSnapshotIds returns NoComparison when id2 prefix not found`() {
+        val snapshots = listOf(makeSnapshot("abc12345-full-id"))
+
+        val result = resolveSnapshotIds("abc12345", "zzz-missing", snapshots)
+        assertIs<DiffResolution.NoComparison>(result)
+        assertTrue(result.message.contains("zzz-missing"))
+    }
+
     // --- loadTaskGraph with fixtures ---
 
     @Test

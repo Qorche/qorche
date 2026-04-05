@@ -45,9 +45,9 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const preflightOutput = `${{ steps.preflight.outputs.output }}`;
-            const dryrunOutput = `${{ steps.dryrun.outputs.output }}`;
-            const exitCode = '${{ steps.preflight.outputs.exit_code }}';
+            const preflightOutput = ${{ toJSON(steps.preflight.outputs.output) }};
+            const dryrunOutput = ${{ toJSON(steps.dryrun.outputs.output) }};
+            const exitCode = ${{ toJSON(steps.preflight.outputs.exit_code) }};
             const hasWarnings = exitCode !== '0';
             const icon = hasWarnings ? '⚠️' : '✅';
             const status = hasWarnings ? 'Warnings detected' : 'All checks passed';
@@ -95,7 +95,7 @@ jobs:
               });
             }
 
-      - name: Fail on breaking change to main
+      - name: Warn on breaking change to main
         if: github.base_ref == 'main' && steps.preflight.outputs.exit_code != '0'
         run: |
           echo "::warning::Version preflight has warnings — review the PR comment."

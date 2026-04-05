@@ -9,6 +9,7 @@ from version_calc import (
     Version,
     calculate_bump,
     classify_commit,
+    filter_releasable,
     next_version,
     parse_version,
     preflight_check,
@@ -174,6 +175,33 @@ class TestCalculateBump(unittest.TestCase):
             classify_commit("feat: actual feature"),
         ]
         self.assertEqual(calculate_bump(commits), BumpLevel.MINOR)
+
+
+class TestFilterReleasable(unittest.TestCase):
+    def test_filters_releasable_only(self):
+        commits = [
+            classify_commit("feat: new thing"),
+            classify_commit("fix: bug"),
+            classify_commit("chore: cleanup"),
+            classify_commit("docs: readme"),
+            classify_commit("perf: faster"),
+        ]
+        result = filter_releasable(commits)
+        self.assertEqual(len(result), 3)
+        types = {c.commit_type for c in result}
+        self.assertEqual(types, {"feat", "fix", "perf"})
+
+    def test_includes_breaking(self):
+        commits = [
+            classify_commit("refactor!: breaking change"),
+            classify_commit("chore: nothing"),
+        ]
+        result = filter_releasable(commits)
+        self.assertEqual(len(result), 1)
+        self.assertTrue(result[0].breaking)
+
+    def test_empty_list(self):
+        self.assertEqual(filter_releasable([]), [])
 
 
 class TestNextVersion(unittest.TestCase):
