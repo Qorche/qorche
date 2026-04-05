@@ -35,7 +35,7 @@ class QorcheCommand : CliktCommand(name = "qorche") {
         completionOption()
         subcommands(
             InitCommand(), RunCommand(), PlanCommand(), ValidateCommand(),
-            VerifyCommand(), ReplayCommand(),
+            VerifyCommand(), ReplayCommand(), ConfigCommand(),
             StatusCommand(), LogsCommand(), HistoryCommand(), DiffCommand(),
             CleanCommand(), SchemaCommand(), VersionCommand()
         )

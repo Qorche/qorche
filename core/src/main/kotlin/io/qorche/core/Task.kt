@@ -58,6 +58,8 @@ data class TaskDefinition(
  * @property extraArgs Additional command-line arguments passed to the runner.
  * @property allowedCommands Permitted commands (for shell runners).
  * @property timeoutSeconds Maximum execution time in seconds (default: 300).
+ * @property env Environment variables passed to the runner process. Values may
+ *   contain `${VAR}` references that are resolved from the system environment.
  */
 @Serializable
 data class RunnerConfig(
@@ -69,7 +71,8 @@ data class RunnerConfig(
     @SerialName("allowed_commands")
     val allowedCommands: List<String> = emptyList(),
     @SerialName("timeout_seconds")
-    val timeoutSeconds: Long = 300
+    val timeoutSeconds: Long = 300,
+    val env: Map<String, String> = emptyMap()
 )
 
 /**

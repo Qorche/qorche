@@ -106,4 +106,14 @@ class InitCommandTest {
             assertTrue(content.startsWith("# Qorche ignore patterns"), "Should start with header comment")
         }
     }
+
+    @Test
+    fun `runners example yaml has instructions and commented examples`() {
+        val content = generateRunnersExample()
+        assertTrue(content.contains("Copy this file to .qorche/runners.yaml"))
+        assertTrue(content.contains("runners:"))
+        assertTrue(content.contains("# shell:"))
+        assertTrue(content.contains("# claude:"))
+        assertTrue(content.contains("\${ANTHROPIC_API_KEY}"))
+    }
 }

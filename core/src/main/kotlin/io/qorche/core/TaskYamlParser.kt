@@ -80,6 +80,27 @@ object TaskYamlParser {
     }
 
     /**
+     * Parses a YAML string without validating runner references.
+     *
+     * Used by commands like `config` where runners may come from external sources
+     * (`.qorche/runners.yaml`, environment variables) not visible to the parser.
+     */
+    fun parseLenient(content: String): TaskProject {
+        require(content.isNotBlank()) { "Task definition file is empty" }
+        return try {
+            yaml.decodeFromString(TaskProject.serializer(), content)
+        } catch (e: Exception) {
+            throw TaskParseException("Failed to parse task definition: ${e.message}", e)
+        }
+    }
+
+    /** Reads and parses a YAML file without validating runner references. */
+    fun parseFileLenient(path: Path): TaskProject {
+        require(path.toFile().exists()) { "Task file does not exist: $path" }
+        return parseLenient(path.readText())
+    }
+
+    /**
      * Parse and build a TaskGraph, validating dependencies and detecting cycles.
      */
     fun parseToGraph(content: String): TaskGraph {
