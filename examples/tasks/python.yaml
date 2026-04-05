@@ -28,3 +28,4 @@ tasks:
     instruction: "pytest tests/ -v"
     runner: shell
     files: [src/, tests/]
+    max_retries: 1

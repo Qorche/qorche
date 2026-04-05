@@ -32,6 +32,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Download the Qorche native binary — no JDK required
+      # TODO: add checksum verification once release pipeline publishes .sha256 digests
       - name: Install Qorche
         run: |
           if [ "$QORCHE_VERSION" = "latest" ]; then
@@ -40,6 +41,8 @@ jobs:
             URL="https://github.com/swatarianess/qorche/releases/download/${QORCHE_VERSION}/qorche-linux-amd64"
           fi
           curl -fsSL -o qorche "$URL"
+          # For production use, pin QORCHE_VERSION and verify the checksum:
+          # echo "<sha256>  qorche" | sha256sum -c -
           chmod +x qorche
           echo "$PWD" >> "$GITHUB_PATH"
 
@@ -53,9 +56,10 @@ jobs:
           # --- Customize: set QORCHE_RUNNER_* vars for your runners ---
           # These override anything in tasks.yaml's inline runners block.
           # Use GitHub Secrets for sensitive values.
-          QORCHE_RUNNER_SHELL_TYPE: shell
-          QORCHE_RUNNER_SHELL_ALLOWED_COMMANDS: npm,gradle,pytest,cargo,go
-          QORCHE_RUNNER_SHELL_TIMEOUT_SECONDS: "120"
+          # Uncomment and adjust for your project:
+          # QORCHE_RUNNER_SHELL_TYPE: shell
+          # QORCHE_RUNNER_SHELL_ALLOWED_COMMANDS: npm,ruff,pytest,cargo,go,./gradlew
+          # QORCHE_RUNNER_SHELL_TIMEOUT_SECONDS: "120"
         run: qorche config "$TASKS_FILE" --check
 
       # Preview the execution plan (dry run)
@@ -66,9 +70,10 @@ jobs:
       - name: Run tasks
         env:
           # --- Customize: same runner env vars as above ---
-          QORCHE_RUNNER_SHELL_TYPE: shell
-          QORCHE_RUNNER_SHELL_ALLOWED_COMMANDS: npm,gradle,pytest,cargo,go
-          QORCHE_RUNNER_SHELL_TIMEOUT_SECONDS: "120"
+          # Uncomment and adjust for your project:
+          # QORCHE_RUNNER_SHELL_TYPE: shell
+          # QORCHE_RUNNER_SHELL_ALLOWED_COMMANDS: npm,ruff,pytest,cargo,go,./gradlew
+          # QORCHE_RUNNER_SHELL_TIMEOUT_SECONDS: "120"
           # Add API keys if using claude-code runner:
           # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # QORCHE_RUNNER_CLAUDE_TYPE: claude-code
