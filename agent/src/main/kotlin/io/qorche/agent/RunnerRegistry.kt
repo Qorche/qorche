@@ -28,7 +28,8 @@ object RunnerRegistry {
         when (config.type) {
             "claude-code" -> ClaudeCodeAdapter(
                 timeoutSeconds = config.timeoutSeconds,
-                extraArgs = config.extraArgs
+                extraArgs = config.extraArgs,
+                env = config.env
             )
 
             "shell" -> {
@@ -37,7 +38,8 @@ object RunnerRegistry {
                 }
                 ShellRunner(
                     allowedCommands = config.allowedCommands.toSet(),
-                    timeoutSeconds = config.timeoutSeconds
+                    timeoutSeconds = config.timeoutSeconds,
+                    env = config.env
                 )
             }
 

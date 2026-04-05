@@ -109,6 +109,114 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push and PR to `main`/
 - **Benchmarks not in CI**: Tagged tests are excluded. Run benchmarks locally to avoid CI timeout and flakiness from variable runner performance.
 - **JDK 21**: Temurin distribution via `actions/setup-java`.
 
+## Testing perspectives
+
+Beyond writing individual unit tests, apply these perspectives when reviewing
+any new feature. Each one catches a different class of bug that isolated "inside-out"
+tests miss.
+
+### Round-trip testing
+
+Generate output, feed it back as input, verify the result matches. This catches
+format mismatches between producers and consumers that unit tests miss because
+they test each side in isolation.
+
+**Example from PR #65**: `envTemplate()` generated `QORCHE_RUNNER_SHELL_ENV_CI=true`
+but `applyEnvOverrides()` expected a comma-separated `QORCHE_RUNNER_SHELL_ENV=CI=true,...`
+format. Each function passed its own unit tests, but the round-trip failed. The fix
+was a round-trip test: generate → parse → apply → verify.
+
+**When to apply**: Any pair of functions where one produces output the other consumes.
+Serialization/deserialization, template generation/parsing, config export/import.
+
+### Contract testing
+
+Verify that configuration values actually reach the systems they're supposed to
+configure. Config is only useful if it has an effect.
+
+**Example from PR #65**: `RunnerConfig.env` was defined and loaded correctly, but
+neither `ClaudeCodeAdapter` nor `ShellRunner` passed those env vars to their
+`ProcessBuilder`. The config existed but had no effect.
+
+**When to apply**: Any new config field. Trace the field from YAML through the
+loader, into the adapter, and confirm it reaches the external system (process env,
+CLI args, HTTP headers, etc.).
+
+### Sentinel/magic number testing
+
+When using default values as "not explicitly set" signals, verify the sentinel
+matches the actual default. Magic numbers that drift from their constants cause
+silent bugs.
+
+**Example from PR #65**: `mergeConfig()` compared `override.timeoutSeconds != 300L`
+to detect explicit overrides. If the constant or default ever changed, this
+comparison would silently break. The fix was `RunnerConfig.DEFAULT_TIMEOUT_SECONDS`.
+
+**When to apply**: Any field with a default value that's also used in conditional
+logic. Extract to a named constant and reference it in both places.
+
+### Template usability testing
+
+If your code generates a template file, actually try using it. Parse the template,
+uncomment the examples, verify it produces valid input.
+
+**Example from PR #65**: `generateRunnersExample()` produced `runners: {}` followed
+by commented-out entries. Uncommenting the entries created a second `runners:` key
+that conflicted with the `{}`. The fix was `runners:` (no `{}`).
+
+**When to apply**: Any generated config, scaffold, or template file. Write a test
+that uncomments the example sections and parses the result.
+
+### Boundary testing between modules
+
+When a feature spans multiple modules (core → agent → cli), test the boundaries
+explicitly. Each module may work in isolation but fail when connected.
+
+**Example from PR #65**: `ConfigCommand` called `TaskYamlParser.parseFile()` which
+validates runner references. But in the config command context, runners come from
+external sources (`.qorche/runners.yaml`, env vars), so validation was too strict.
+The fix was `parseFileLenient()`.
+
+**When to apply**: Any CLI command or API that composes multiple core functions.
+Test with realistic inputs that exercise the full path, not just each function.
+
+### Secret safety testing
+
+Any code that displays, logs, or serializes configuration must be tested for
+information leakage. Partial masking is often worse than no masking because it
+creates a false sense of security.
+
+**Example from PR #65**: `formatRunnerEnv()` showed `${v.take(4)}****` for long
+values, leaking the first 4 characters of secrets. For API keys with common
+prefixes (e.g., `sk-ant-...`), this reveals the provider and key type.
+
+**When to apply**: Any display/logging of config values that might contain secrets.
+Always use full masking (`****`) unless you have a specific reason not to.
+
+### Cross-platform input testing
+
+CLI tools receive input differently on each platform. Test with the actual input
+mechanism, not just the parsed values.
+
+**Example from PR #65**: `ConfigCommandTest` used `cmd.test(path.toString())` where
+Clikt's `test(String)` interprets backslashes as escape characters. On Windows,
+`C:\Users\...` became `C:Users...`. The fix was `test(listOf(path.toString()))`.
+
+**When to apply**: Any CLI test that passes file paths. Use `test(listOf(...))` to
+bypass string parsing. Test on both Unix and Windows CI.
+
+### Perspective checklist for new features
+
+Before merging a feature, ask:
+
+1. **Round-trip**: Do producers and consumers agree on format?
+2. **Contract**: Does config actually reach the target system?
+3. **Sentinel**: Are default-value comparisons using named constants?
+4. **Template**: Can generated templates be used without editing (beyond uncommenting)?
+5. **Boundary**: Does the feature work when modules are composed, not just in isolation?
+6. **Secrets**: Is sensitive data fully masked in all display paths?
+7. **Platform**: Do tests work on both Unix and Windows?
+
 ## Adding new tests
 
 ### Conventions

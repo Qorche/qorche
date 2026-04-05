@@ -6,6 +6,8 @@ import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ConfigCommandTest {
 
@@ -226,6 +228,175 @@ class ConfigCommandTest {
             )
             val result = cmd.test(listOf(tasksFile.toString()))
             assertContains(result.output, "timeout_seconds: 30")
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `config fails on invalid yaml`() {
+        val tmpDir = Files.createTempDirectory("qorche-config-test")
+        try {
+            val tasksFile = tmpDir.resolve("tasks.yaml")
+            tasksFile.writeText("invalid: yaml: [broken")
+
+            val cmd = ConfigCommand(workDirProvider = { tmpDir })
+            val result = cmd.test(listOf(tasksFile.toString()))
+            assertEquals(2, result.statusCode)
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `config fails on missing env var reference`() {
+        val tmpDir = Files.createTempDirectory("qorche-config-test")
+        try {
+            val qorcheDir = tmpDir.resolve(".qorche")
+            Files.createDirectories(qorcheDir)
+            qorcheDir.resolve("runners.yaml").writeText("""
+                runners:
+                  claude:
+                    type: claude-code
+                    env:
+                      API_KEY: ${'$'}{MISSING_SECRET}
+            """.trimIndent())
+
+            val tasksFile = tmpDir.resolve("tasks.yaml")
+            tasksFile.writeText("""
+                project: test
+                tasks:
+                  - id: t1
+                    instruction: "do stuff"
+            """.trimIndent())
+
+            val cmd = ConfigCommand(
+                workDirProvider = { tmpDir },
+                envProvider = { null }
+            )
+            val result = cmd.test(listOf(tasksFile.toString()))
+            assertEquals(2, result.statusCode)
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `config masks env values in yaml display`() {
+        val tmpDir = Files.createTempDirectory("qorche-config-test")
+        try {
+            val tasksFile = tmpDir.resolve("tasks.yaml")
+            tasksFile.writeText("""
+                project: test
+                runners:
+                  claude:
+                    type: claude-code
+                    env:
+                      ANTHROPIC_API_KEY: sk-ant-super-secret-key
+                      OTHER_SECRET: password123
+                tasks:
+                  - id: t1
+                    instruction: "do stuff"
+            """.trimIndent())
+
+            val cmd = ConfigCommand(workDirProvider = { tmpDir })
+            val result = cmd.test(listOf(tasksFile.toString()))
+            assertEquals(0, result.statusCode)
+            // Env values should be fully masked
+            assertContains(result.output, "ANTHROPIC_API_KEY: ****")
+            assertContains(result.output, "OTHER_SECRET: ****")
+            // Secret values must NOT appear in output
+            assertFalse(result.output.contains("sk-ant"), "Secret prefix must not leak")
+            assertFalse(result.output.contains("password123"), "Secret value must not leak")
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `config check passes with multiple runners all present`() {
+        val tmpDir = Files.createTempDirectory("qorche-config-test")
+        try {
+            val tasksFile = tmpDir.resolve("tasks.yaml")
+            tasksFile.writeText("""
+                project: test
+                runners:
+                  shell:
+                    type: shell
+                    allowed_commands: [npm]
+                  claude:
+                    type: claude-code
+                tasks:
+                  - id: lint
+                    instruction: "npm run lint"
+                    runner: shell
+                  - id: review
+                    instruction: "review code"
+                    runner: claude
+            """.trimIndent())
+
+            val cmd = ConfigCommand(workDirProvider = { tmpDir })
+            val result = cmd.test(listOf(tasksFile.toString(), "--check"))
+            assertEquals(0, result.statusCode)
+            assertContains(result.output, "All referenced runners are configured")
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `config json includes runner fields`() {
+        val tmpDir = Files.createTempDirectory("qorche-config-test")
+        try {
+            val tasksFile = tmpDir.resolve("tasks.yaml")
+            tasksFile.writeText("""
+                project: test
+                runners:
+                  shell:
+                    type: shell
+                    allowed_commands: [npm, gradle]
+                    timeout_seconds: 120
+                tasks:
+                  - id: t1
+                    instruction: "do stuff"
+            """.trimIndent())
+
+            val cmd = ConfigCommand(workDirProvider = { tmpDir })
+            val result = cmd.test(listOf(tasksFile.toString(), "--json"))
+            assertEquals(0, result.statusCode)
+            assertContains(result.output, "\"timeout_seconds\": 120")
+            assertContains(result.output, "\"npm\"")
+            assertContains(result.output, "\"gradle\"")
+        } finally {
+            tmpDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `config displays multiple runners sorted by name`() {
+        val tmpDir = Files.createTempDirectory("qorche-config-test")
+        try {
+            val tasksFile = tmpDir.resolve("tasks.yaml")
+            tasksFile.writeText("""
+                project: test
+                runners:
+                  zulu:
+                    type: shell
+                    allowed_commands: [echo]
+                  alpha:
+                    type: claude-code
+                tasks:
+                  - id: t1
+                    instruction: "do stuff"
+            """.trimIndent())
+
+            val cmd = ConfigCommand(workDirProvider = { tmpDir })
+            val result = cmd.test(listOf(tasksFile.toString()))
+            assertEquals(0, result.statusCode)
+            // alpha should appear before zulu in output
+            val alphaIdx = result.output.indexOf("alpha:")
+            val zuluIdx = result.output.indexOf("zulu:")
+            assertTrue(alphaIdx < zuluIdx, "Runners should be sorted alphabetically")
         } finally {
             tmpDir.toFile().deleteRecursively()
         }

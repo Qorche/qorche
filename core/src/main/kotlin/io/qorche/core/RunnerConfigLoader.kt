@@ -100,6 +100,13 @@ object RunnerConfigLoader {
 
     data class ConfigDiagnostic(val runnerName: String, val message: String)
 
+    /**
+     * Parse a runners YAML string directly into a runner config map.
+     * Useful for testing generated templates.
+     */
+    fun loadRunnersFromContent(content: String): Map<String, RunnerConfig> =
+        runnersYaml.decodeFromString<RunnersFile>(content).runners
+
     // --- Internal ---
 
     internal fun loadProjectRunners(workDir: Path): Map<String, RunnerConfig> {
@@ -139,7 +146,11 @@ object RunnerConfigLoader {
             endpoint = override.endpoint ?: base.endpoint,
             extraArgs = override.extraArgs.ifEmpty { base.extraArgs },
             allowedCommands = override.allowedCommands.ifEmpty { base.allowedCommands },
-            timeoutSeconds = if (override.timeoutSeconds != 300L) override.timeoutSeconds else base.timeoutSeconds,
+            timeoutSeconds = if (override.timeoutSeconds != RunnerConfig.DEFAULT_TIMEOUT_SECONDS) {
+                override.timeoutSeconds
+            } else {
+                base.timeoutSeconds
+            },
             env = if (override.env.isNotEmpty()) base.env + override.env else base.env
         )
     }
@@ -175,9 +186,8 @@ object RunnerConfigLoader {
 
             // Merge env vars from QORCHE_RUNNER_{NAME}_ENV_{KEY}
             val envMap = base.env.toMutableMap()
-            envProvider("${prefix}ENV")?.split(",")?.forEach { pair ->
-                val parts = pair.split("=", limit = 2)
-                if (parts.size == 2) envMap[parts[0].trim()] = parts[1].trim()
+            for (envKey in base.env.keys) {
+                envProvider("${prefix}ENV_$envKey")?.let { envMap[envKey] = it }
             }
 
             result[name] = RunnerConfig(

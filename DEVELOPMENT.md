@@ -215,7 +215,7 @@ Higher layer wins. `tasks.yaml` defines the **shape** (what runners exist); `.qo
 
 ### `runners.example.yaml`
 
-`qorche init` generates a `runners.example.yaml` template in the project root (like `.env.example`). This file is checked in and documents the runners the project expects, without containing actual secrets.
+`qorche init` generates `.qorche/runners.example.yaml` (like `.env.example`). This file is checked in and documents the runners the project expects, without containing actual secrets.
 
 ### `qorche config` command
 

@@ -148,9 +148,8 @@ class ConfigCommand(
     private fun formatRunnerEnv(env: Map<String, String>) {
         if (env.isEmpty()) return
         echo("  env:")
-        for ((k, v) in env) {
-            val display = if (v.length > 8) "${v.take(4)}****" else "****"
-            echo("    $k: $display")
+        for ((k, _) in env) {
+            echo("    $k: ****")
         }
     }
 
