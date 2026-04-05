@@ -1,27 +1,27 @@
 # Qorche
 
-Run multiple workers in parallel on the same repo. Conflicts are detected automatically, not at merge time.
+Run multiple processes in parallel on the same repo. Conflicts are detected automatically, not at merge time.
 
-**In practice:** Three parallel Claude Code agents completed in 62s vs ~180s sequential on a real codebase, with zero conflicts detected automatically via MVCC snapshots.
+**In practice:** Three parallel workers completed in 62s vs ~180s sequential on a real codebase, with zero conflicts detected automatically via MVCC snapshots.
 
-Qorche is an MVCC engine for codebases , it tracks concurrent filesystem mutations, detects conflicts in real-time, resolves them deterministically, and maintains a complete audit trail. It includes a task orchestrator and works with any process that modifies files: LLM agents, build tools, formatters, code generators, CI steps.
+Qorche is an MVCC engine for codebases — it tracks concurrent filesystem mutations, detects conflicts in real-time, resolves them deterministically, and maintains a complete audit trail. It works with any process that modifies files: build tools, formatters, code generators, CI steps, LLM agents, or custom scripts.
 
 [![CI](https://github.com/swatarianess/qorche/actions/workflows/ci.yml/badge.svg)](https://github.com/swatarianess/qorche/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## Why Qorche?
 
-If you're running parallel agents today, you're probably using git worktrees + tmux. That works until two agents modify the same file and you discover the conflict at merge time, after both have finished.
+If you're running parallel tasks today, you're probably using git worktrees or separate checkouts. That works until two processes modify the same file and you discover the conflict at merge time, after both have finished.
 
 |                    | Git Worktrees                       | Composio Agent Orchestrator  | AgentFS                               | Qorche                                         |
 |--------------------|-------------------------------------|------------------------------|---------------------------------------|------------------------------------------------|
-| Conflict detection | At merge time (after agents finish) | At merge time (git-based)    | N/A (single-agent isolation)          | After each parallel group completes            |
+| Conflict detection | At merge time (after tasks finish)  | At merge time (git-based)    | N/A (single-process isolation)        | After each parallel group completes            |
 | Retry on conflict  | Manual, re-run from scratch         | Manual                       | N/A                                   | Automatic, loser retries against updated state |
 | Scope audit        | None                                | None                         | None                                  | Detects writes outside declared file scope     |
-| Multi-agent coord  | None (agents unaware of each other) | Fleet management, CI routing | Single agent per sandbox              | DAG scheduling + MVCC across concurrent agents |
-| Isolation model    | Full repo copy per worktree         | Full repo copy per worktree  | SQLite-backed copy-on-write per agent | Single checkout, snapshot-based diffing        |
+| Multi-process coord| None (tasks unaware of each other)  | Fleet management, CI routing | Single process per sandbox            | DAG scheduling + MVCC across concurrent tasks  |
+| Isolation model    | Full repo copy per worktree         | Full repo copy per worktree  | SQLite-backed copy-on-write           | Single checkout, snapshot-based diffing        |
 | Audit trail        | Git history only                    | Session logs                 | SQLite queryable history              | Append-only WAL + before/after snapshots       |
-| Agent-agnostic     | Yes                                 | Claude Code, Codex, Aider    | Any (via SDK/FUSE)                    | Yes, any process that modifies files           |
+| Process-agnostic   | Yes                                 | Claude Code, Codex, Aider    | Any (via SDK/FUSE)                    | Yes, any process that modifies files           |
 
 ## Quick start
 
@@ -105,37 +105,39 @@ Tasks without dependencies run in parallel. If two parallel tasks modify the sam
 
 ### Per-task runners
 
-Each task can specify which runner executes it via the `runner` field, referencing a named entry in the top-level `runners` map. This lets you mix different tools in the same DAG — cheap local models for simple tasks, frontier models for complex analysis, shell commands for deterministic steps.
+Each task can specify which runner executes it via the `runner` field, referencing a named entry in the top-level `runners` map. This lets you mix different tools in the same DAG — shell commands for deterministic steps, specialized runners for complex analysis, different timeout policies per task type.
 
 ```yaml
 project: my-project
 runners:
-  claude:
-    type: claude-code
-    extra_args: [--dangerously-skip-permissions]
+  fast:
+    type: shell
+    allowed_commands: [eslint, pytest, typedoc]
+    timeout_seconds: 60
   shell:
     type: shell
-    allowed_commands: [npm, pytest]
+    allowed_commands: [npm, gradle, pytest]
     timeout_seconds: 120
 
 tasks:
-  - id: analyze
-    instruction: "Identify root causes from build logs"
-    runner: claude
-    files: [analysis/]
+  - id: lint
+    instruction: "eslint --fix src/"
+    runner: fast
+    files: [src/]
 
   - id: run-tests
     instruction: "pytest src/"
     runner: shell
     files: [src/, tests/]
 
-  - id: review
-    instruction: "Final review of changes"
-    # no runner = uses default_runner (shell if not set)
-    depends_on: [analyze, run-tests]
+  - id: generate-docs
+    instruction: "typedoc --out docs/ src/"
+    runner: fast
+    depends_on: [lint, run-tests]
+    files: [docs/]
 ```
 
-Supported runner types: `claude-code`, `shell`. Tasks without a `runner` field use `default_runner`. If `default_runner` is not set, the shell runner is used.
+Built-in runner types: `shell`, `claude-code`. Tasks without a `runner` field use `default_runner`. If `default_runner` is not set, the shell runner is used.
 
 ## Terminal output
 
@@ -188,7 +190,7 @@ Total time: 47230ms
 3. **Execute** with `qorche run tasks.yaml`, parallel groups run concurrently, SHA snapshots taken before/after each task
 4. **Detect** write-write conflicts via snapshot diff after each group completes, conflicting tasks identified, non-conflicting tasks succeed
 5. **Retry** losers automatically against updated filesystem state (configurable via `max_retries`, deterministic winner by YAML order)
-6. **Audit** scope violations when workers write outside their declared file scope
+6. **Audit** scope violations when processes write outside their declared file scope
 7. **Log** everything to `.qorche/wal.jsonl`, complete audit trail for replay and debugging
 
 ## Architecture
@@ -207,7 +209,7 @@ graph TB
         Q["<b>Qorche</b><br/><i>Deterministic orchestrator for<br/>concurrent filesystem mutations.<br/>Coordinates workers via MVCC snapshots,<br/>DAG scheduling, and conflict detection.</i>"]:::system
     end
 
-    Agents["<b>Workers</b><br/><i>Any process that modifies files:<br/>LLM agents, shell commands,<br/>build tools, formatters</i>"]:::external
+    Agents["<b>Workers</b><br/><i>Any process that modifies files:<br/>shell commands, build tools,<br/>formatters, code generators</i>"]:::external
     FS["<b>Filesystem</b><br/><i>Working directory where<br/>all mutations occur</i>"]:::external
     YAML["<b>tasks.yaml</b><br/><i>Task definitions, dependencies,<br/>file scopes, runner configs</i>"]:::external
 
@@ -245,7 +247,7 @@ graph TB
         Native["<b>native/</b><br/><i>GraalVM Shared Library</i><br/>C-compatible FFI for embedding<br/>in non-JVM languages"]:::native
     end
 
-    Workers["<b>Workers</b><br/><i>LLM agents, shell commands,<br/>build tools, formatters</i>"]:::external
+    Workers["<b>Workers</b><br/><i>Shell commands, build tools,<br/>formatters, code generators</i>"]:::external
 
     subgraph Storage [".qorche/ Local Data"]
         direction LR
@@ -308,7 +310,7 @@ Benchmarked on a standard dev machine (Windows, JDK 21, `-Xmx64m`). Step duratio
 | 5,000  | 211ms         | 0.8ms              | 423ms             |
 | 20,000 | 824ms         | 2.5ms              | 1,650ms           |
 
-For real-world agent tasks that take 30–120 seconds, the overhead of a 1,000-file repo is under 0.3%.
+For real-world tasks that take 30–120 seconds, the overhead of a 1,000-file repo is under 0.3%.
 
 **DAG traversal is negligible.** 500-node chain: 23ms total (0.05ms/node).
 
@@ -321,36 +323,32 @@ With file scoping, a 50k-file monorepo where each task scopes to a 200-file modu
 ```yaml
 tasks:
   - id: auth-refactor
-    instruction: "Refactor auth middleware"
+    instruction: "gradle :services:auth:build"
     files: [services/auth/]           # only hashes files under services/auth/
 
-  - id: payments-feature
-    instruction: "Add payment retry logic"
+  - id: payments-build
+    instruction: "gradle :services:payments:build"
     files: [services/payments/]       # only hashes files under services/payments/
 
   - id: shared-types
-    instruction: "Update shared type definitions"
+    instruction: "gradle :libs:shared-types:build"
     files: [libs/shared-types/]
     max_retries: 1                    # might conflict if auth or payments also touch shared types
 ```
 
-Scoping makes conflict detection sharper, two agents with non-overlapping scopes can never conflict. And scope audit catches the case where an agent writes outside its declared area.
+Scoping makes conflict detection sharper — two tasks with non-overlapping scopes can never conflict. And scope audit catches the case where a process writes outside its declared area.
 
 Full benchmark suite: `./gradlew :agent:benchmark`
 
 ## Design principles
 
-**Agents are untrusted.** Qorche never relies on workers to report what files they modified. Instead, it takes SHA snapshots of the filesystem before and after each task. This catches all side effects, expected or not, regardless of whether the worker reports them. This principle was validated during dogfooding: Claude Code in `--print` mode emits no FileModified events, yet Qorche detected all changes correctly via snapshots.
+**Workers are untrusted.** Qorche never relies on processes to report what files they modified. Instead, it takes SHA snapshots of the filesystem before and after each task. This catches all side effects — expected or not — regardless of whether the process reports them.
 
-**Snapshots are ground truth.** Conflict detection compares snapshot hashes, not event streams. This makes Qorche work with any worker type: LLM agents that don't report file changes, shell scripts, build tools, or anything else that modifies files.
+**Snapshots are ground truth.** Conflict detection compares snapshot hashes, not event streams. This makes Qorche work with any process type: shell scripts, build tools, formatters, code generators, or anything else that modifies files.
 
-**Crash-safe.** If a worker crashes mid-execution, the after-snapshot still captures the dirty filesystem state. Partial writes are visible to conflict detection.
+**Crash-safe.** If a process crashes mid-execution, the after-snapshot still captures the dirty filesystem state. Partial writes are visible to conflict detection.
 
 ## Use cases
-
-**Multi-agent coding** 
-
-Run multiple LLM agents (Claude Code, Aider, OpenHands) on the same repo simultaneously. Qorche detects when two agents modify the same file and retries the loser against the winner's changes.
 
 **Monorepo parallel tasks**
 
@@ -360,23 +358,27 @@ Tools like Nx and Gradle `--parallel` assume tasks are isolated by package, but 
 
 Run protobuf, OpenAPI, and GraphQL generators in parallel. When generators write to overlapping output directories, Qorche detects the conflict instead of silently producing corrupt output.
 
-**Database migrations**
-
-Two developers generate migrations concurrently and both get number `0042`. Qorche detects the collision immediately. The retry re-runs the loser, which now sees `0042` exists and generates `0043`.
-
 **Parallel formatting/linting**
 
 Run `prettier --write` and `eslint --fix` in parallel. Formatters are idempotent, so retry always produces the correct result.
+
+**Database migrations**
+
+Two processes generate migrations concurrently and both get number `0042`. Qorche detects the collision immediately. The retry re-runs the loser, which now sees `0042` exists and generates `0043`.
 
 **IaC code generation**
 
 Concurrent `cdk synth` or Terragrunt runs with conflict detection on shared output directories.
 
+**Multi-process coordination**
+
+Run multiple concurrent workers (LLM agents, build tools, custom scripts) on the same repo simultaneously. Qorche detects when two processes modify the same file and retries the loser against the winner's changes.
+
 ## Embedding (shared library)
 
 Qorche is also available as a shared library (`libqorche`) for embedding in non-JVM applications via C FFI. Build with `./gradlew :native:nativeCompile`.
 
-Exported functions: `qorche_version`, `qorche_validate_yaml`, `qorche_plan`, `qorche_snapshot`, `qorche_diff`, `qorche_free`. All return JSON strings. See `native/examples/test_libqorche.py` for a working Python example using ctypes.
+Exported functions (12): `qorche_version`, `qorche_parse_yaml`, `qorche_validate_yaml`, `qorche_plan`, `qorche_schema`, `qorche_snapshot`, `qorche_diff`, `qorche_list_snapshots`, `qorche_wal_entries`, `qorche_run`, `qorche_clean`, `qorche_free`. All return JSON strings. See `native/examples/test_libqorche.py` for a working Python example using ctypes.
 
 ```python
 # Python example
@@ -448,9 +450,9 @@ Module boundaries are strict: `core/` depends on nothing, `agent/` depends on `c
 
 **CLI (complete):** JSON output, colored terminal output, progress reporting, native binary builds, GitHub Releases, per-task logs, status command, init with project detection, validate command, clean command.
 
-**Shared library (complete):** C FFI entry points for version, validate, plan, snapshot, diff. Python test harness.
+**Shared library (complete):** 12 C FFI entry points covering the full lifecycle (parse, validate, plan, run, snapshot, diff, clean). Python test harness.
 
-**Planned:** MCP server for agent integration, ConflictResolver interface (pluggable merge strategies), validation pipeline (run tests before accepting merged state), TUI monitor, AgentFS integration.
+**Planned:** Externalized runner configuration (layered config, env var injection), MCP server integration, TUI monitor.
 
 ## Requirements
 
