@@ -26,7 +26,7 @@ qorche/
 ├── agent/      # AgentRunner implementations (MockAgentRunner, ShellRunner, ClaudeCodeAdapter)
 ├── cli/        # CLI entry point via Clikt (run, plan, init, validate, status, logs, diff, clean)
 ├── native/     # Shared library (libqorche) via GraalVM --shared, C FFI entry points
-└── docs/       # Architecture docs and planning
+└── examples/   # CI templates and language-specific task examples
 ```
 
 ## Module boundaries

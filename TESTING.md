@@ -3,7 +3,7 @@
 ## Overview
 
 Qorche uses Kotlin Test (JUnit 5 platform) with `kotlinx-coroutines-test` for async
-testing. The suite contains **185 tests** across 20 test files in three modules, covering
+testing. The suite contains **394 tests** across 32 test files in three modules, covering
 DAG scheduling, MVCC snapshots, conflict detection, CLI output, and full orchestrator
 integration. No external mocking frameworks are used -- all test doubles are hand-written.
 
@@ -42,9 +42,9 @@ MVCC overhead, snapshot scaling, and conflict detection throughput.
 
 | Module   | Test files | Tests | Focus |
 |----------|-----------|-------|-------|
-| `core/`  | 9         | 92    | DAG scheduling, MVCC snapshots, WAL serialization, conflict detection, file index caching, ignore patterns, YAML parsing, serialization round-trips, snapshot store persistence |
-| `agent/` | 8         | 72    | Orchestrator integration, parallel execution, conflict retry/rollback, scope audit, shell runner process spawning, runner registry, benchmarks, cleanup |
-| `cli/`   | 3         | 21    | End-to-end CLI pipeline, init command project detection, validate command ANSI output |
+| `core/`  | 13        | 168   | DAG scheduling, MVCC snapshots, WAL serialization, conflict detection, file index caching, ignore patterns, YAML parsing, serialization round-trips, snapshot store persistence, runner config loading |
+| `agent/` | 11        | 92    | Orchestrator integration, parallel execution, conflict retry/rollback, scope audit, shell runner process spawning, runner registry, benchmarks, cleanup |
+| `cli/`   | 8         | 134   | End-to-end CLI pipeline, init command project detection, validate command ANSI output, config command, logs command, status command, JSON output formatting |
 
 ### Key test patterns
 
