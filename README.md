@@ -6,7 +6,7 @@ Run multiple processes in parallel on the same repo. Conflicts are detected auto
 
 Qorche is an MVCC engine for codebases — it tracks concurrent filesystem mutations, detects conflicts in real-time, resolves them deterministically, and maintains a complete audit trail. It works with any process that modifies files: build tools, formatters, code generators, CI steps, LLM agents, or custom scripts.
 
-[![CI](https://github.com/swatarianess/qorche/actions/workflows/ci.yml/badge.svg)](https://github.com/swatarianess/qorche/actions/workflows/ci.yml)
+[![CI](https://github.com/Qorche/qorche/actions/workflows/ci.yml/badge.svg)](https://github.com/Qorche/qorche/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## Why Qorche?
@@ -30,14 +30,14 @@ If you're running parallel tasks today, you're probably using git worktrees or s
 **Linux / macOS**
 ```bash
 # Download the latest release
-curl -fsSL -o qorche https://github.com/swatarianess/qorche/releases/latest/download/qorche-linux-amd64
+curl -fsSL -o qorche https://github.com/Qorche/qorche/releases/latest/download/qorche-linux-amd64
 chmod +x qorche
 sudo mv qorche /usr/local/bin/
 ```
 
 **Windows (PowerShell)**
 ```powershell
-Invoke-WebRequest -Uri https://github.com/swatarianess/qorche/releases/latest/download/qorche-windows-amd64.exe -OutFile qorche.exe
+Invoke-WebRequest -Uri https://github.com/Qorche/qorche/releases/latest/download/qorche-windows-amd64.exe -OutFile qorche.exe
 Move-Item qorche.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\"
 ```
 

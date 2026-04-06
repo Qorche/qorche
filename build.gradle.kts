@@ -123,7 +123,7 @@ subprojects {
                     pom {
                         name.set("Qorche ${project.name}")
                         description.set("Deterministic orchestrator for concurrent filesystem mutations")
-                        url.set("https://github.com/swatarianess/qorche")
+                        url.set("https://github.com/Qorche/qorche")
                         licenses {
                             license {
                                 name.set("Apache-2.0")
@@ -136,7 +136,7 @@ subprojects {
             repositories {
                 maven {
                     name = "GitHubPackages"
-                    url = uri("https://maven.pkg.github.com/swatarianess/qorche")
+                    url = uri("https://maven.pkg.github.com/Qorche/qorche")
                     credentials {
                         username = System.getenv("GITHUB_ACTOR") ?: ""
                         password = System.getenv("GITHUB_TOKEN") ?: ""
