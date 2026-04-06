@@ -12,6 +12,7 @@ import kotlinx.serialization.json.Json
 
 private val json = Json { prettyPrint = true }
 
+/** Top-level JSON output structure for a `qorche run` execution with `--output json`. */
 @Serializable
 data class RunOutput(
     val version: String,
@@ -26,6 +27,7 @@ data class RunOutput(
     val groups: List<GroupOutput>
 )
 
+/** JSON representation of a single task's outcome within [RunOutput]. */
 @Serializable
 data class TaskOutput(
     val id: String,
@@ -37,6 +39,7 @@ data class TaskOutput(
     val elapsedMs: Long = 0
 )
 
+/** JSON representation of a detected conflict between two tasks that modified the same files. */
 @Serializable
 data class ConflictOutput(
     val taskA: String,
@@ -44,12 +47,14 @@ data class ConflictOutput(
     val files: List<String>
 )
 
+/** JSON representation of a scope violation where tasks modified files outside their declared scope. */
 @Serializable
 data class ScopeViolationOutput(
     val undeclaredFiles: List<String>,
     val suspectTaskIds: List<String>
 )
 
+/** JSON representation of a verification command result for a parallel execution group. */
 @Serializable
 data class VerifyResultOutput(
     val success: Boolean,
@@ -61,6 +66,7 @@ data class VerifyResultOutput(
     val groupIndex: Int
 )
 
+/** JSON representation of a parallel execution group containing one or more task IDs. */
 @Serializable
 data class GroupOutput(
     val index: Int,
@@ -68,6 +74,7 @@ data class GroupOutput(
     val parallel: Boolean
 )
 
+/** Top-level JSON output structure for `qorche plan --output json`. */
 @Serializable
 data class PlanOutput(
     val version: String,
@@ -77,6 +84,7 @@ data class PlanOutput(
     val warnings: List<PlanWarning>
 )
 
+/** JSON representation of a scope overlap warning between two independent tasks. */
 @Serializable
 data class PlanWarning(
     val type: String,
@@ -86,6 +94,14 @@ data class PlanWarning(
     val message: String
 )
 
+/**
+ * Serializes a [Orchestrator.GraphResult] to a JSON string for `--output json` mode.
+ *
+ * @param project the project name
+ * @param version the CLI version string
+ * @param wallTimeMs total wall-clock time in milliseconds
+ * @return pretty-printed JSON string
+ */
 fun Orchestrator.GraphResult.toJson(project: String, version: String, wallTimeMs: Long): String {
     val output = RunOutput(
         version = version,
@@ -132,6 +148,15 @@ fun Orchestrator.GraphResult.toJson(project: String, version: String, wallTimeMs
     return json.encodeToString(output)
 }
 
+/**
+ * Builds the JSON output string for the `plan` command.
+ *
+ * @param project the project name
+ * @param version the CLI version string
+ * @param graph the task dependency graph, used to compute parallel groups
+ * @param definitions the task definitions, used to detect scope overlaps
+ * @return pretty-printed JSON string
+ */
 fun buildPlanJson(
     project: String,
     version: String,
@@ -157,6 +182,13 @@ fun buildPlanJson(
     return json.encodeToString(output)
 }
 
+/**
+ * Detects file scope overlaps between pairs of independent (non-dependent) tasks.
+ * Two tasks with overlapping file scopes and no dependency between them may conflict at runtime.
+ *
+ * @param definitions the task definitions to check
+ * @return a list of [PlanWarning] for each pair with overlapping scopes
+ */
 fun detectScopeOverlaps(definitions: List<TaskDefinition>): List<PlanWarning> {
     val warnings = mutableListOf<PlanWarning>()
     for (i in definitions.indices) {

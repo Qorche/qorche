@@ -63,9 +63,13 @@ class Orchestrator(private val workDir: Path) {
         val scopeViolations: List<ConflictDetector.ScopeViolation> = emptyList(),
         val verifyResults: List<VerifyResult> = emptyList()
     ) {
+        /** True when all tasks completed and no verification step caused a failure. */
         val success: Boolean get() = failedTasks == 0 && !hasVerifyFailure
+        /** True when at least one write-write conflict was detected between parallel tasks. */
         val hasConflicts: Boolean get() = conflicts.isNotEmpty()
+        /** True when tasks modified files outside their declared scope. */
         val hasScopeViolations: Boolean get() = scopeViolations.isNotEmpty()
+        /** True when at least one verification command exited with a non-zero code. */
         val hasVerifyFailure: Boolean get() = verifyResults.any { !it.success }
     }
 
@@ -897,6 +901,7 @@ class Orchestrator(private val workDir: Path) {
         val walCleared: Boolean = false,
         val fileIndexCleared: Boolean = false
     ) {
+        /** Total number of files or stores that were cleaned. */
         val totalRemoved: Int get() = snapshotsRemoved + logsRemoved + (if (walCleared) 1 else 0) + (if (fileIndexCleared) 1 else 0)
     }
 

@@ -6,6 +6,12 @@ import com.github.ajalt.clikt.parameters.arguments.argument
 import io.qorche.core.ExitCode
 import java.nio.file.Path
 
+/**
+ * Validates a YAML task file without executing any tasks. Checks for parse errors,
+ * dependency cycles, and reports task/dependency/group counts along with scope overlap warnings.
+ *
+ * Usage: `qorche validate <file>`
+ */
 class ValidateCommand(
     internal val workDirProvider: () -> Path = { Path.of(System.getProperty("user.dir")) }
 ) : CliktCommand(name = "validate") {

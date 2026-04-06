@@ -293,9 +293,11 @@ class TextualMergeResolver : ConflictResolver {
     }
 
     companion object {
-        /** Git-style conflict markers. */
+        /** Opening conflict marker indicating the start of version A's content. */
         const val CONFLICT_START = "<<<<<<< version-a"
+        /** Separator between version A and version B content in a conflict region. */
         const val CONFLICT_SEPARATOR = "======="
+        /** Closing conflict marker indicating the end of version B's content. */
         const val CONFLICT_END = ">>>>>>> version-b"
     }
 }

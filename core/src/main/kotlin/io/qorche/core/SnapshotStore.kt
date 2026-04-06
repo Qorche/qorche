@@ -21,11 +21,13 @@ class SnapshotStore(private val snapshotsDir: Path) {
         snapshotsDir.createDirectories()
     }
 
+    /** Persists a snapshot to disk as a JSON file named by its ID. */
     fun save(snapshot: Snapshot) {
         val file = snapshotsDir.resolve("${snapshot.id}.json")
         Files.writeString(file, json.encodeToString(snapshot))
     }
 
+    /** Loads a snapshot by its ID, returning null if the file does not exist or is corrupt. */
     fun load(id: String): Snapshot? {
         val file = snapshotsDir.resolve("$id.json")
         if (!file.exists()) return null
@@ -36,6 +38,7 @@ class SnapshotStore(private val snapshotsDir: Path) {
         }
     }
 
+    /** Returns all stored snapshots, ordered by timestamp descending (most recent first). */
     fun list(): List<Snapshot> =
         if (!snapshotsDir.exists()) emptyList()
         else snapshotsDir.listDirectoryEntries("*.json")
@@ -48,5 +51,6 @@ class SnapshotStore(private val snapshotsDir: Path) {
             }
             .sortedByDescending { it.timestamp }
 
+    /** Returns the most recent snapshot by timestamp, or null if the store is empty. */
     fun latest(): Snapshot? = list().firstOrNull()
 }

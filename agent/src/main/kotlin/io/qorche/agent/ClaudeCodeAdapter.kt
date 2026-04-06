@@ -27,6 +27,15 @@ class ClaudeCodeAdapter(
     private val env: Map<String, String> = emptyMap()
 ) : AgentRunner {
 
+    /**
+     * Spawns `claude --print` as a child process with [extraArgs] appended.
+     *
+     * The process inherits all parent environment variables (needed for
+     * `ANTHROPIC_API_KEY`, `PATH`, etc.) with [env] merged on top. Stdout and
+     * stderr are combined and streamed line-by-line as [AgentEvent.Output] events.
+     * If the process exceeds [timeoutSeconds] it is forcibly destroyed and an
+     * exit code of 124 is emitted.
+     */
     override fun run(
         instruction: String,
         workingDirectory: Path,

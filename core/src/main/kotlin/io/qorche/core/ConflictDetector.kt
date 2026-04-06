@@ -10,25 +10,45 @@ import kotlinx.serialization.Serializable
  */
 object ConflictDetector {
 
-    /** Controls whether and how many times conflict losers are retried. */
+    /**
+     * Controls whether and how many times conflict losers are retried.
+     *
+     * @property defaultMaxRetries Upper bound on retries per task (capped by each task's own maxRetries).
+     * @property enabled When false, conflicting losers fail immediately without retrying.
+     */
     @Serializable
     data class ConflictRetryPolicy(
         val defaultMaxRetries: Int = 1,
         val enabled: Boolean = true
     )
 
-    /** Result of pairwise conflict detection: files changed by both, only A, or only B. */
+    /**
+     * Result of pairwise conflict detection between two agents.
+     *
+     * @property conflicts Files modified by both agents (write-write conflicts).
+     * @property agentAOnly Files modified only by agent A.
+     * @property agentBOnly Files modified only by agent B.
+     */
     @Serializable
     data class ConflictReport(
         val conflicts: Set<String>,
         val agentAOnly: Set<String>,
         val agentBOnly: Set<String>
     ) {
+        /** True if at least one file was modified by both agents. */
         val hasConflicts: Boolean get() = conflicts.isNotEmpty()
     }
 
     /**
      * Pairwise conflict detection between two agent snapshots against a shared base.
+     *
+     * Diffs each agent's after-snapshot against the base, then intersects the changed
+     * file sets to find write-write conflicts.
+     *
+     * @param base The shared before-snapshot taken before either agent ran.
+     * @param agentA After-snapshot from the first agent.
+     * @param agentB After-snapshot from the second agent.
+     * @return A [ConflictReport] partitioning files into conflicts, A-only, and B-only.
      */
     fun detectConflicts(
         base: Snapshot,
@@ -51,7 +71,11 @@ object ConflictDetector {
     }
 
     /**
-     * Conflict between a specific task and its file set.
+     * A write-write conflict between two tasks that modified the same file(s).
+     *
+     * @property taskA ID of the first conflicting task.
+     * @property taskB ID of the second conflicting task.
+     * @property conflictingFiles The set of files modified by both tasks.
      */
     @Serializable
     data class TaskConflict(

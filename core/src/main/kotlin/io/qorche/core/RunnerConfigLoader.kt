@@ -98,6 +98,12 @@ object RunnerConfigLoader {
         }
     }.trimEnd()
 
+    /**
+     * A diagnostic message about a runner configuration issue.
+     *
+     * @property runnerName The runner that has the issue.
+     * @property message Human-readable description of the problem.
+     */
     data class ConfigDiagnostic(val runnerName: String, val message: String)
 
     /**

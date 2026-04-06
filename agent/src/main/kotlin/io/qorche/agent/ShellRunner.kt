@@ -38,6 +38,17 @@ class ShellRunner(
         require(allowedCommands.isNotEmpty()) { "Allowlist must contain at least one permitted command" }
     }
 
+    /**
+     * Tokenises [instruction] into an executable and arguments, validates the
+     * executable against the allowlist, then spawns the process via [ProcessBuilder].
+     *
+     * No shell interpreter is used -- the tokenised list is passed directly to
+     * the OS, preventing shell injection. The environment is built by applying
+     * [envFilter] to inherited variables, then merging [env] on top. Stdout and
+     * stderr are combined and streamed line-by-line as [AgentEvent.Output] events.
+     * If the process exceeds [timeoutSeconds] it is forcibly destroyed and an
+     * exit code of 124 is emitted.
+     */
     override fun run(
         instruction: String,
         workingDirectory: Path,
