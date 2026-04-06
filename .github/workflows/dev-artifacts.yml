@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   stamp:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       dev_version: ${{ steps.calc.outputs.dev_version }}
     steps:
@@ -42,7 +42,7 @@ jobs:
             artifact: qorche-linux-amd64
             binary: cli/build/native/nativeCompile/qorche
           - os: windows-latest
-            artifact: qorche-windows-amd64.exe
+            artifact: blacksmith-4vcpu-windows-2025
             binary: cli/build/native/nativeCompile/qorche.exe
 
     runs-on: ${{ matrix.os }}
@@ -85,7 +85,7 @@ jobs:
 
   release:
     needs: [stamp, build]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
