@@ -376,6 +376,10 @@ Two processes generate migrations concurrently and both get number `0042`. Qorch
 
 Concurrent `cdk synth` or Terragrunt runs with conflict detection on shared output directories.
 
+**Game mod conflict detection**
+
+Multiple mods modifying the same game files (weapons.xml, config.ini) today rely on load order — last mod silently wins. Qorche detects which mods touch the same files, shows exactly what each mod changed, and merges non-overlapping changes automatically. The same pattern applies to plugin systems, browser extensions, and CMS themes.
+
 **Multi-process coordination**
 
 Run multiple concurrent workers (LLM agents, build tools, custom scripts) on the same repo simultaneously. Qorche detects when two processes modify the same file and retries the loser against the winner's changes.
