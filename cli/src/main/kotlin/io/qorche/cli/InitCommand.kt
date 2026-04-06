@@ -10,6 +10,15 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 
+/**
+ * CLI command that initializes a new Qorche project in the current directory.
+ *
+ * Creates the `.qorche/` directory, a `tasks.yaml` scaffold tailored to the detected project type,
+ * a `.qorignore` file with sensible defaults, and a runner configuration example. Also appends
+ * `.qorche/` to `.gitignore` if a Git repository is detected.
+ *
+ * Usage: `qorche init [--force]`
+ */
 class InitCommand(
     internal val workDirProvider: () -> Path = { Path.of(System.getProperty("user.dir")) }
 ) : CliktCommand(name = "init") {
@@ -74,6 +83,11 @@ class InitCommand(
 
 // --- Project type detection ---
 
+/**
+ * Detected project type used to generate appropriate `tasks.yaml` and `.qorignore` scaffolds.
+ *
+ * @property label human-readable label for the project type shown during init
+ */
 enum class ProjectType(val label: String) {
     GRADLE_KOTLIN("Kotlin/Gradle"),
     GRADLE_JAVA("Java/Gradle"),
@@ -85,6 +99,12 @@ enum class ProjectType(val label: String) {
     GENERIC("Generic")
 }
 
+/**
+ * Detects the project type by checking for characteristic build files in the working directory.
+ *
+ * @param workDir the project root directory to inspect
+ * @return the detected [ProjectType], or [ProjectType.GENERIC] if no build system is recognized
+ */
 internal fun detectProjectType(workDir: Path): ProjectType = when {
     Files.exists(workDir.resolve("build.gradle.kts")) -> ProjectType.GRADLE_KOTLIN
     Files.exists(workDir.resolve("build.gradle")) -> ProjectType.GRADLE_JAVA
@@ -112,6 +132,7 @@ internal fun detectProjectType(workDir: Path): ProjectType = when {
  * }
  * ```
  */
+/** Builder that collects task definitions for constructing a [TaskProject]. */
 class TaskProjectBuilder(private val projectName: String) {
     private val tasks = mutableListOf<TaskDefinition>()
 
@@ -124,6 +145,7 @@ class TaskProjectBuilder(private val projectName: String) {
     fun build(): TaskProject = TaskProject(project = projectName, tasks = tasks)
 }
 
+/** Builder for a single [TaskDefinition] within the DSL, supporting dependencies and file scopes. */
 class TaskBuilder(private val id: String, private val instruction: String) {
     private val dependsOn = mutableListOf<String>()
     private val files = mutableListOf<String>()
@@ -139,12 +161,26 @@ class TaskBuilder(private val id: String, private val instruction: String) {
     )
 }
 
+/**
+ * DSL entry point for building a [TaskProject] with a concise builder syntax.
+ *
+ * @param name the project name
+ * @param configure block to add tasks via [TaskProjectBuilder]
+ * @return the constructed [TaskProject]
+ */
 internal fun taskProject(name: String, configure: TaskProjectBuilder.() -> Unit): TaskProject {
     val builder = TaskProjectBuilder(name)
     builder.configure()
     return builder.build()
 }
 
+/**
+ * Generates a `tasks.yaml` string tailored to the detected project type.
+ *
+ * @param type the detected project type
+ * @param workDir the working directory, used to derive the project name from the directory name
+ * @return a YAML string ready to write to `tasks.yaml`
+ */
 internal fun generateTasksYaml(type: ProjectType, workDir: Path): String {
     val projectName = workDir.fileName?.toString() ?: "my-project"
     val project = buildProjectForType(type, projectName)
@@ -189,6 +225,11 @@ private fun buildProjectForType(type: ProjectType, name: String): TaskProject = 
 
 // --- runners.example.yaml generation ---
 
+/**
+ * Generates a commented example `runners.yaml` file explaining the layered configuration model.
+ *
+ * @return the example YAML content
+ */
 internal fun generateRunnersExample(): String = """
     |# Runner configuration for this project.
     |# Copy this file to .qorche/runners.yaml and fill in your values.
@@ -221,6 +262,7 @@ internal fun generateRunnersExample(): String = """
 
 // --- .qorignore generation ---
 
+/** A group of ignore patterns with a descriptive comment for the `.qorignore` file. */
 private data class IgnoreSection(val comment: String, val patterns: List<String>)
 
 private val baseIgnoreHeader = listOf(
@@ -243,6 +285,12 @@ private val projectIgnorePatterns: Map<ProjectType, IgnoreSection> = mapOf(
     ProjectType.GO to IgnoreSection("Go extras", listOf("vendor/"))
 )
 
+/**
+ * Generates a `.qorignore` file with base header comments and project-type-specific ignore patterns.
+ *
+ * @param type the detected project type, used to select additional ignore patterns
+ * @return the `.qorignore` file content
+ */
 internal fun generateQorignore(type: ProjectType): String = buildString {
     for (line in baseIgnoreHeader) appendLine(line)
     appendLine()

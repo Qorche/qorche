@@ -36,9 +36,9 @@ jobs:
       - name: Install Qorche
         run: |
           if [ "$QORCHE_VERSION" = "latest" ]; then
-            URL="https://github.com/swatarianess/qorche/releases/latest/download/qorche-linux-amd64"
+            URL="https://github.com/Qorche/qorche/releases/latest/download/qorche-linux-amd64"
           else
-            URL="https://github.com/swatarianess/qorche/releases/download/${QORCHE_VERSION}/qorche-linux-amd64"
+            URL="https://github.com/Qorche/qorche/releases/download/${QORCHE_VERSION}/qorche-linux-amd64"
           fi
           curl -fsSL -o qorche "$URL"
           # For production use, pin QORCHE_VERSION and verify the checksum:

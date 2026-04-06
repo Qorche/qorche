@@ -101,7 +101,12 @@ object TaskYamlParser {
     }
 
     /**
-     * Parse and build a TaskGraph, validating dependencies and detecting cycles.
+     * Parse a YAML string and build a validated [TaskGraph] with cycle detection.
+     *
+     * @param content YAML task definition content.
+     * @return A [TaskGraph] with validated dependencies and no cycles.
+     * @throws TaskParseException if the YAML is invalid.
+     * @throws CycleDetectedException if the dependency graph contains a cycle.
      */
     fun parseToGraph(content: String): TaskGraph {
         val project = parse(content)

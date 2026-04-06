@@ -22,6 +22,11 @@ import io.qorche.core.TaskStatus
 import kotlinx.coroutines.runBlocking
 import java.nio.file.Path
 
+/**
+ * Root command for the Qorche CLI. Registers all subcommands and handles global options.
+ *
+ * Usage: `qorche [--no-color] <command> [options]`
+ */
 class QorcheCommand : CliktCommand(name = "qorche") {
     override fun help(context: com.github.ajalt.clikt.core.Context) = "Orchestrate concurrent filesystem mutations with MVCC conflict detection"
 
@@ -42,6 +47,15 @@ class QorcheCommand : CliktCommand(name = "qorche") {
     }
 }
 
+/**
+ * Executes a single instruction or a YAML task graph.
+ *
+ * When the argument is a `.yaml`/`.yml` file, it is parsed as a task graph and executed
+ * with parallel scheduling, conflict detection, and verification. Otherwise, the argument
+ * is treated as a plain instruction string executed as a single task via Claude Code.
+ *
+ * Usage: `qorche run <instruction-or-file> [--verbose] [--output json] [--skip-permissions] [--hash sha256]`
+ */
 class RunCommand(
     internal val workDirProvider: () -> Path = { Path.of(System.getProperty("user.dir")) },
     internal val orchestratorFactory: (Path) -> Orchestrator = ::Orchestrator,
@@ -224,6 +238,12 @@ class RunCommand(
     }
 }
 
+/**
+ * Previews the execution plan for a YAML task file without running any tasks.
+ * Shows topological execution order, parallel groups, and scope overlap warnings.
+ *
+ * Usage: `qorche plan <file> [--output json]`
+ */
 class PlanCommand(
     internal val workDirProvider: () -> Path = { Path.of(System.getProperty("user.dir")) }
 ) : CliktCommand(name = "plan") {
@@ -281,6 +301,12 @@ class PlanCommand(
     }
 }
 
+/**
+ * Runs the verification command defined in a YAML task file's `verify` section.
+ * Executes the command as a subprocess against the current working directory and reports pass/fail.
+ *
+ * Usage: `qorche verify <file> [--verbose]`
+ */
 class VerifyCommand(
     internal val workDirProvider: () -> Path = { Path.of(System.getProperty("user.dir")) }
 ) : CliktCommand(name = "verify") {
@@ -333,6 +359,12 @@ class VerifyCommand(
     }
 }
 
+/**
+ * Replays the write-ahead log (WAL) history, showing all recorded events with optional
+ * detail level. Can also verify that the current filesystem matches the latest snapshot.
+ *
+ * Usage: `qorche replay [--verbose] [--check]`
+ */
 class ReplayCommand(
     internal val workDirProvider: () -> Path = { Path.of(System.getProperty("user.dir")) },
     internal val orchestratorFactory: (Path) -> Orchestrator = ::Orchestrator
@@ -405,6 +437,11 @@ class ReplayCommand(
     }
 }
 
+/**
+ * Lists stored snapshots with their IDs, timestamps, descriptions, and file counts.
+ *
+ * Usage: `qorche history [--limit N]`
+ */
 class HistoryCommand(
     internal val workDirProvider: () -> Path = { Path.of(System.getProperty("user.dir")) },
     internal val orchestratorFactory: (Path) -> Orchestrator = ::Orchestrator
@@ -433,6 +470,13 @@ class HistoryCommand(
     }
 }
 
+/**
+ * Shows file-level changes between two snapshots (added, modified, deleted).
+ * Snapshot IDs can be specified as prefixes. If only one ID is given, its parent is used
+ * as the comparison target.
+ *
+ * Usage: `qorche diff <id1> [id2]`
+ */
 class DiffCommand(
     internal val workDirProvider: () -> Path = { Path.of(System.getProperty("user.dir")) },
     internal val orchestratorFactory: (Path) -> Orchestrator = ::Orchestrator
@@ -468,6 +512,11 @@ class DiffCommand(
     }
 }
 
+/**
+ * Prints the JSON Schema for `tasks.yaml`, useful for editor autocomplete and validation.
+ *
+ * Usage: `qorche schema [--output <file>]`
+ */
 class SchemaCommand : CliktCommand(name = "schema") {
     override fun help(context: com.github.ajalt.clikt.core.Context) =
         "Print the JSON Schema for tasks.yaml (for editor autocomplete and validation)"
@@ -489,6 +538,7 @@ class SchemaCommand : CliktCommand(name = "schema") {
     }
 }
 
+/** Prints the current Qorche CLI version. */
 class VersionCommand : CliktCommand(name = "version") {
     override fun help(context: com.github.ajalt.clikt.core.Context) = "Print version info"
     override fun run() {

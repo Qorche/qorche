@@ -8,6 +8,12 @@ import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.fileSize
 
+/**
+ * Displays a summary of the Qorche workspace state including snapshot count, WAL entries,
+ * task logs, file index size, last activity, conflicts, and retries.
+ *
+ * Usage: `qorche status`
+ */
 class StatusCommand(
     internal val workDirProvider: () -> Path = { Path.of(System.getProperty("user.dir")) }
 ) : CliktCommand(name = "status") {

@@ -6,18 +6,26 @@ import kotlinx.serialization.Serializable
 /** Classification of task work. Used for reporting and future scheduling heuristics. */
 @Serializable
 enum class TaskType {
+    /** Exploratory analysis or research — no code changes expected. */
     @SerialName("explore") EXPLORE,
+    /** Code implementation or modification — the primary work type. */
     @SerialName("implement") IMPLEMENT,
+    /** Verification of existing code (review, audit, validation). */
     @SerialName("verify") VERIFY,
+    /** Test creation or execution. */
     @SerialName("test") TEST
 }
 
 /** Lifecycle state of a task node during graph execution. */
 @Serializable
 enum class TaskStatus {
+    /** Task is waiting to execute — all new tasks start in this state. */
     @SerialName("pending") PENDING,
+    /** Task is currently executing via its assigned runner. */
     @SerialName("running") RUNNING,
+    /** Task finished successfully (exit code 0, no conflicts). */
     @SerialName("completed") COMPLETED,
+    /** Task finished with an error (non-zero exit, exception, or unresolved conflict). */
     @SerialName("failed") FAILED,
     /** Task was not executed because a dependency failed. */
     @SerialName("skipped") SKIPPED
@@ -75,6 +83,7 @@ data class RunnerConfig(
     val env: Map<String, String> = emptyMap()
 ) {
     companion object {
+        /** Default execution timeout for runners: 5 minutes. */
         const val DEFAULT_TIMEOUT_SECONDS: Long = 300
     }
 }
@@ -103,7 +112,9 @@ data class VerifyConfig(
 /** What to do when a verification step fails. */
 @Serializable
 enum class VerifyFailurePolicy {
+    /** Abort the pipeline immediately on verification failure. */
     @SerialName("fail") FAIL,
+    /** Log the failure as a warning but continue executing remaining groups. */
     @SerialName("warn") WARN
 }
 

@@ -25,8 +25,11 @@ import kotlin.io.path.relativeTo
  * [SHA256] is available when cryptographic guarantees are needed.
  */
 enum class HashAlgorithm {
+    /** Hardware-accelerated CRC32C — fastest option, 32-bit output. */
     CRC32C,
+    /** SHA-1 (same as Git) — good balance of speed and collision resistance. */
     SHA1,
+    /** SHA-256 — strongest collision resistance, slower than the alternatives. */
     SHA256
 }
 
@@ -81,6 +84,7 @@ data class PreflightResult(
     val currentAlgorithm: HashAlgorithm,
     val suggestedAlgorithm: HashAlgorithm
 ) {
+    /** Returns a human-readable message suggesting the faster algorithm and how to reduce overhead. */
     fun message(): String =
         "$fileCount files in scope (threshold: $threshold). " +
         "Consider --hash ${suggestedAlgorithm.name.lowercase()} for faster snapshots, " +

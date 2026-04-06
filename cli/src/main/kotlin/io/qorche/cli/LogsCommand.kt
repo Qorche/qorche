@@ -10,6 +10,12 @@ import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 import kotlin.io.path.readText
 
+/**
+ * Lists all task log files or displays the contents of a specific task's log.
+ * Log files are stored in `.qorche/logs/` as `<taskId>.log`.
+ *
+ * Usage: `qorche logs [taskId]`
+ */
 class LogsCommand(
     internal val workDirProvider: () -> Path = { Path.of(System.getProperty("user.dir")) }
 ) : CliktCommand(name = "logs") {

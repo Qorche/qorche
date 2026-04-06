@@ -25,6 +25,14 @@ class MockAgentRunner(
     private val failMessage: String = "Mock agent failure"
 ) : AgentRunner {
 
+    /**
+     * Simulates an agent run without spawning any external process.
+     *
+     * After a [delayMs] pause, creates or overwrites each file listed in
+     * [filesToTouch] under [workingDirectory] and emits a [AgentEvent.FileModified]
+     * event for each. If [shouldFail] is true, emits an error with [failMessage]
+     * and exits with code 1 instead of touching files.
+     */
     override fun run(
         instruction: String,
         workingDirectory: Path,

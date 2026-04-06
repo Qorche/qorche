@@ -16,6 +16,13 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
+/**
+ * Displays the merged runner configuration from all layers (project file, inline YAML, environment variables).
+ * Supports validation mode (`--check`) to verify all referenced runners are configured, and
+ * CI setup mode (`--env-template`) to generate environment variable templates.
+ *
+ * Usage: `qorche config [tasks.yaml] [--check] [--env-template] [--json]`
+ */
 class ConfigCommand(
     internal val workDirProvider: () -> Path = { Path.of(System.getProperty("user.dir")) },
     internal val envProvider: (String) -> String? = System::getenv
@@ -31,6 +38,7 @@ class ConfigCommand(
     ).flag()
     private val json by option("--json", help = "Output as JSON").flag()
 
+    /** JSON serializer configured with pretty printing for `--json` output. */
     private val prettyJson = Json { prettyPrint = true }
 
     override fun run() {
