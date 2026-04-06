@@ -22,7 +22,7 @@ permissions:
 jobs:
   # Detect whether source code changed — used to skip expensive jobs on docs-only PRs
   changes:
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
@@ -44,11 +44,7 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     strategy:
       matrix:
-        include:
-          - os: blacksmith-4vcpu-ubuntu-2404
-            name: ubuntu
-          - os: blacksmith-4vcpu-windows-2025
-            name: windows
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -66,29 +62,29 @@ jobs:
       # so Gradle can overlap module tasks (e.g. detekt on core while compiling agent).
       # --continue ensures tests still run even if detekt fails.
       - name: Run Detekt and tests with coverage
-        if: matrix.name == 'ubuntu'
+        if: matrix.os == 'ubuntu-latest'
         run: ./gradlew detekt test koverXmlReport --parallel --continue
 
       - name: Run Detekt and tests
-        if: matrix.name != 'ubuntu'
+        if: matrix.os != 'ubuntu-latest'
         run: ./gradlew detekt test --parallel --continue
 
       - name: Upload Detekt merged report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: detekt-report-${{ matrix.name }}
+          name: detekt-report-${{ matrix.os }}
           path: build/reports/detekt/
 
       - name: Upload Detekt SARIF to GitHub Code Scanning
-        if: always() && matrix.name == 'ubuntu'
+        if: always() && matrix.os == 'ubuntu-latest'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: build/reports/detekt/merged.sarif
           category: detekt
 
       - name: Post coverage to PR
-        if: github.event_name == 'pull_request' && matrix.name == 'ubuntu'
+        if: github.event_name == 'pull_request' && matrix.os == 'ubuntu-latest'
         uses: madrapps/jacoco-report@v1.7.2
         with:
           paths: |
@@ -100,7 +96,7 @@ jobs:
           min-coverage-changed-files: 60
 
       - name: Upload coverage report
-        if: matrix.name == 'ubuntu'
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v7
         with:
           name: coverage-report
@@ -110,14 +106,14 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: test-reports-${{ matrix.name }}
+          name: test-reports-${{ matrix.os }}
           path: '**/build/reports/tests/'
 
   # Gate job — the single required status check for branch protection.
   # Always runs: passes when tests pass or were skipped (docs-only PRs),
   # fails when tests fail.
   gate:
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     needs: [changes, test]
     if: always()
     steps:
