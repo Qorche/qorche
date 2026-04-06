@@ -98,5 +98,9 @@ replay_pid*
 # Internal docs
 docs/
 
+# Python
+__pycache__/
+*.pyc
+
 # AI
 .claude/
