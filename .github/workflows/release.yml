@@ -17,7 +17,7 @@ permissions:
 jobs:
   release:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       new_release: ${{ steps.release.outputs.new_release_published }}
 
@@ -50,7 +50,7 @@ jobs:
   publish:
     needs: release
     if: needs.release.outputs.new_release == 'true' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
       packages: write
@@ -86,7 +86,7 @@ jobs:
             artifact: qorche-linux-amd64
             binary: cli/build/native/nativeCompile/qorche
           - os: windows-latest
-            artifact: qorche-windows-amd64.exe
+            artifact: blacksmith-4vcpu-windows-2025
             binary: cli/build/native/nativeCompile/qorche.exe
 
     runs-on: ${{ matrix.os }}

@@ -22,7 +22,7 @@ permissions:
 jobs:
   # Detect whether source code changed — used to skip expensive jobs on docs-only PRs
   changes:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
@@ -44,7 +44,7 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, blacksmith-4vcpu-windows-2025]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -113,7 +113,7 @@ jobs:
   # Always runs: passes when tests pass or were skipped (docs-only PRs),
   # fails when tests fail.
   gate:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [changes, test]
     if: always()
     steps:
